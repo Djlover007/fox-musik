@@ -10,20 +10,48 @@ import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
 
+import java.util.ArrayList;
+
 public class MainActivity extends BridgeActivity {
 
-    private String permissionName() {
+    private String audioPermission() {
         return Build.VERSION.SDK_INT >= 33
             ? Manifest.permission.READ_MEDIA_AUDIO
             : Manifest.permission.READ_EXTERNAL_STORAGE;
     }
 
+    private String[] missingPermissions() {
+        ArrayList<String> list = new ArrayList<String>();
+        if (ContextCompat.checkSelfPermission(this, audioPermission()) != PackageManager.PERMISSION_GRANTED) {
+            list.add(audioPermission());
+        }
+        // Ab Android 13 braucht die Mediensteuerung (Benachrichtigung) eine eigene Erlaubnis.
+        if (Build.VERSION.SDK_INT >= 33
+            && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            list.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        return list.toArray(new String[0]);
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MediaScanPlugin.class);
+        registerPlugin(PlaybackPlugin.class);
         super.onCreate(savedInstanceState);
-        if (ContextCompat.checkSelfPermission(this, permissionName()) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[] { permissionName() }, 7421);
+        String[] missing = missingPermissions();
+        if (missing.length > 0) {
+            ActivityCompat.requestPermissions(this, missing, 7421);
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        // Timer der WebView weiterlaufen lassen, damit der naechste Titel auch bei gesperrtem Bildschirm startet.
+        try {
+            getBridge().getWebView().resumeTimers();
+        } catch (Exception e) {
+            // ignore
         }
     }
 
