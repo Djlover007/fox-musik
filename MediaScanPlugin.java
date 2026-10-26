@@ -58,7 +58,8 @@ public class MediaScanPlugin extends Plugin {
                 MediaStore.Audio.Media.ARTIST,
                 MediaStore.Audio.Media.ALBUM,
                 MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DATE_ADDED
             };
             String selection = "(" + MediaStore.Audio.Media.IS_MUSIC + " != 0 OR "
                 + MediaStore.Audio.Media.DATA + " LIKE '%.mp3') AND "
@@ -85,6 +86,7 @@ public class MediaScanPlugin extends Plugin {
                         o.put("album", clean(c.getString(3)));
                         o.put("duration", c.getLong(4) / 1000.0);
                         o.put("path", path);
+                        o.put("added", c.getLong(6) * 1000L);
                         list.put(o);
                     }
                 } finally {
