@@ -783,13 +783,19 @@ function isNative(){try{return !!(window.Capacitor&&window.Capacitor.isNativePla
 function getScanPlugin(){
   if(mediaScan)return mediaScan;
   var C=window.Capacitor;if(!C)return null;
-  try{mediaScan=(C.Plugins&&C.Plugins.MediaScan)||(C.registerPlugin&&C.registerPlugin('MediaScan'))||null;}catch(e){}
+  try{mediaScan=(C.Plugins&&C.Plugins.MediaScan)||(typeof C.registerPlugin==='function'&&C.registerPlugin('MediaScan'))||null;}catch(e){}
+  if(!mediaScan&&typeof C.nativePromise==='function'){
+    mediaScan={
+      scan:function(){return C.nativePromise('MediaScan','scan',{});},
+      requestAccess:function(){return C.nativePromise('MediaScan','requestAccess',{});}
+    };
+  }
   return mediaScan;
 }
 function devUrl(s){return window.Capacitor.convertFileSrc('file://'+s.path.split('/').map(encodeURIComponent).join('/'));}
 async function scanDevice(manual){
   var P=getScanPlugin();
-  if(!P){if(manual)toast('Das Such-Modul fehlt in dieser App.');return;}
+  if(!P){if(manual)toast('Such-Modul fehlt. Capacitor: '+Object.keys(window.Capacitor||{}).join(', ').slice(0,160));return;}
   if(scanning){if(manual)toast('Die Suche läuft schon …');return;}
   scanning=true;renderMain();
   if(manual)toast('Suche Musik auf dem Handy …',true);
