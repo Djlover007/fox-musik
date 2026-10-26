@@ -22,8 +22,14 @@ jobs:
           java-version: 17
       - name: Web-Dateien vorbereiten
         run: mkdir -p www && cp index.html www/index.html
+      - name: Config prüfen
+        run: |
+          [ -f capacitor.config.json ] || cp capacitor_config.json capacitor.config.json
+          cat capacitor.config.json
       - run: npm install
       - run: npx cap add android
+      - name: Musik-Suche und Wiedergabe-Dienst einbauen
+        run: node setup-android.js
       - run: npx cap sync android
       - name: APK bauen
         working-directory: android
