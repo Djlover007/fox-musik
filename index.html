@@ -789,11 +789,13 @@ function getScanPlugin(){
 function devUrl(s){return window.Capacitor.convertFileSrc('file://'+s.path.split('/').map(encodeURIComponent).join('/'));}
 async function scanDevice(manual){
   var P=getScanPlugin();
-  if(!P||scanning)return;
+  if(!P){if(manual)toast('Das Such-Modul fehlt in dieser App.');return;}
+  if(scanning){if(manual)toast('Die Suche läuft schon …');return;}
   scanning=true;renderMain();
   if(manual)toast('Suche Musik auf dem Handy …',true);
   try{
-    var r=await P.scan(), found=(r&&r.songs)||[];
+    var r=await Promise.race([P.scan(),new Promise(function(_,rej){setTimeout(function(){rej(new Error('Zeitüberschreitung'));},20000);})]);
+    var found=(r&&r.songs)||[];
     var have=new Map();songs.forEach(function(s){if(s.device)have.set(s.key,s);});
     var hidden=new Set(state.hidden), seen=new Set(), fresh=[], added=[];
     found.forEach(function(x){
@@ -822,7 +824,14 @@ async function scanDevice(manual){
     else if(manual)toast('Keine neuen Titel gefunden.');
   }catch(e){
     var m=String((e&&e.message)||e);
-    toast(/permission/i.test(m)?'Bitte erlaube Fox Musik den Zugriff auf „Musik und Audio“ (Android-Einstellungen, Apps).':'Die Suche hat nicht geklappt.');
+    if(/permission/i.test(m)){
+      if(manual){
+        try{await P.requestAccess();}catch(x){}
+        toast('Erlaube Fox Musik den Zugriff auf „Musik und Audio“. Kommt kein Fenster, öffne die Android-Einstellungen, Apps, Fox Musik, Berechtigungen.');
+      }
+    }else{
+      toast('Fehler bei der Suche: '+m.slice(0,140));
+    }
   }
   scanning=false;lastScan=Date.now();
   render();coverJob();
@@ -865,6 +874,7 @@ async function coverJob(){
   coverBusy=false;
   render();if(cur)updateNow();
 }
+window.addEventListener('fox-permission',function(){scanDevice(false);});
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'&&isNative()&&ready&&Date.now()-lastScan>60000)scanDevice(false);
 });

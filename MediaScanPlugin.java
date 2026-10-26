@@ -1,52 +1,56 @@
 package de.foxmusik.app;
 
 import android.Manifest;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.os.Build;
 import android.provider.MediaStore;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.annotation.Permission;
-import com.getcapacitor.annotation.PermissionCallback;
 
-@CapacitorPlugin(
-    name = "MediaScan",
-    permissions = {
-        @Permission(alias = "audio", strings = { Manifest.permission.READ_MEDIA_AUDIO }),
-        @Permission(alias = "storage", strings = { Manifest.permission.READ_EXTERNAL_STORAGE })
-    }
-)
+@CapacitorPlugin(name = "MediaScan")
 public class MediaScanPlugin extends Plugin {
 
-    private String permissionAlias() {
-        return Build.VERSION.SDK_INT >= 33 ? "audio" : "storage";
+    private String permissionName() {
+        return Build.VERSION.SDK_INT >= 33
+            ? Manifest.permission.READ_MEDIA_AUDIO
+            : Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    private boolean hasPermission() {
+        return ContextCompat.checkSelfPermission(getContext(), permissionName())
+            == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @PluginMethod
+    public void requestAccess(final PluginCall call) {
+        if (hasPermission() || getActivity() == null) {
+            call.resolve();
+            return;
+        }
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                ActivityCompat.requestPermissions(getActivity(), new String[] { permissionName() }, 7421);
+            }
+        });
+        call.resolve();
     }
 
     @PluginMethod
     public void scan(PluginCall call) {
-        if (getPermissionState(permissionAlias()) != PermissionState.GRANTED) {
-            requestPermissionForAlias(permissionAlias(), call, "permissionCallback");
-        } else {
-            doScan(call);
-        }
-    }
-
-    @PermissionCallback
-    private void permissionCallback(PluginCall call) {
-        if (getPermissionState(permissionAlias()) == PermissionState.GRANTED) {
-            doScan(call);
-        } else {
+        if (!hasPermission()) {
             call.reject("permission");
+            return;
         }
-    }
-
-    private void doScan(PluginCall call) {
         try {
             String[] projection = {
                 MediaStore.Audio.Media._ID,
@@ -60,14 +64,15 @@ public class MediaScanPlugin extends Plugin {
                 + MediaStore.Audio.Media.DATA + " LIKE '%.mp3') AND "
                 + MediaStore.Audio.Media.DURATION + " > 30000";
             JSArray list = new JSArray();
-            try (Cursor c = getContext().getContentResolver().query(
+            Cursor c = getContext().getContentResolver().query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 selection,
                 null,
                 MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC"
-            )) {
-                if (c != null) {
+            );
+            if (c != null) {
+                try {
                     while (c.moveToNext()) {
                         String path = c.getString(5);
                         if (path == null) {
@@ -82,6 +87,8 @@ public class MediaScanPlugin extends Plugin {
                         o.put("path", path);
                         list.put(o);
                     }
+                } finally {
+                    c.close();
                 }
             }
             JSObject ret = new JSObject();
