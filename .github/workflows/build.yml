@@ -28,6 +28,10 @@ jobs:
           cat capacitor.config.json
       - run: npm install
       - run: npx cap add android
+      - name: Fuchs-Icon erzeugen
+        run: |
+          pip install pillow
+          python3 make-icons.py
       - name: Musik-Suche und Wiedergabe-Dienst einbauen
         run: node setup-android.js
       - run: npx cap sync android
