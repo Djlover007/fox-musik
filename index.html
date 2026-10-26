@@ -1026,7 +1026,7 @@ async function scanDevice(manual){
         toast('Erlaube Fox Musik den Zugriff auf „Musik und Audio“. Kommt kein Fenster, öffne die Android-Einstellungen, Apps, Fox Musik, Berechtigungen.');
       }
     }else{
-      toast('Fehler bei der Suche: '+m.slice(0,140));
+      toast('Fehler bei der Suche: '+m.slice(0,200)+(/not implemented|unavailable|unable/i.test(m)?' (Android-Teil der App fehlt: neu bauen)':''));
     }
   }
   scanning=false;lastScan=Date.now();
