@@ -212,6 +212,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 6h14M3 12h14M3 18h8M18 15l4 3-4 3z"/></symbol>
   <symbol id="i-listplus" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M18 14v6M15 17h6"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></symbol>
 </svg>
 
 <input id="files" type="file" accept="audio/*,.mp3,.m4a,.flac,.ogg,.wav" multiple hidden>
@@ -285,10 +286,20 @@ async function dbPut(store,val,key){if(!db)return;try{var s=db.transaction(store
 async function dbDel(store,key){if(!db)return;try{await rq(db.transaction(store,'readwrite').objectStore(store).delete(key));}catch(e){}}
 async function dbAll(store){if(!db)return [];try{return await rq(db.transaction(store).objectStore(store).getAll());}catch(e){return [];}}
 async function dbGet(store,key){if(!db)return null;try{return await rq(db.transaction(store).objectStore(store).get(key));}catch(e){return null;}}
+function dbBatch(store,items,del){
+  if(!db||!items.length)return Promise.resolve();
+  return new Promise(function(res){
+    try{
+      var t=db.transaction(store,'readwrite'), s=t.objectStore(store);
+      items.forEach(function(x){if(del)s.delete(x);else s.put(x);});
+      t.oncomplete=res;t.onerror=res;t.onabort=res;
+    }catch(e){res();}
+  });
+}
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[]};
 var view={tab:'tracks',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=new Audio(); audio.preload='auto';
@@ -391,8 +402,9 @@ function loadSong(s){
   if(!s)return;
   cur=s;
   if(audioUrl)URL.revokeObjectURL(audioUrl);
-  audioUrl=URL.createObjectURL(s.blob);
-  audio.src=audioUrl;
+  audioUrl='';
+  if(s.device){audio.src=devUrl(s);}
+  else{audioUrl=URL.createObjectURL(s.blob);audio.src=audioUrl;}
   var p=audio.play();if(p&&p.catch)p.catch(function(){});
   setMedia(s);
   updateNow();
@@ -550,6 +562,10 @@ function barHTML(n){
   return '<div class="bar"><span class="cnt">'+n+' Titel</span><button class="pill pri" data-act="playall">'+ic('play',1)+'Abspielen</button><button class="pill" data-act="shuffleall">'+ic('shuffle')+'Zufall</button></div>';
 }
 function emptyHTML(){
+  if(isNative()){
+    return '<div class="empty"><div class="halo">'+ic('note')+'</div><h2>'+(scanning?'Suche läuft …':'Keine Musik gefunden')+'</h2><p>Fox Musik sucht beim Start automatisch nach Musik auf deinem Handy. Du kannst Dateien auch von Hand hinzufügen.</p>'+
+      '<button class="btn" data-act="scan">'+ic('refresh')+'Neu suchen</button></div>';
+  }
   return '<div class="empty"><div class="halo">'+ic('note')+'</div><h2>Noch keine Musik hier</h2><p>Wähle MP3-Dateien aus dem Speicher deines Handys aus. Danach findest du sie unter Titel, Alben und Interpreten.</p>'+
     '<button class="btn" data-act="add">'+ic('plus')+'Songs hinzufügen</button><p class="hint">Die Songs bleiben in diesem Browser gespeichert und liegen nicht in der Cloud.</p></div>';
 }
@@ -624,7 +640,7 @@ function renderHead(){
       (info&&info.kind==='pl'?'<button class="ib" data-act="plmenu" aria-label="Playlist-Optionen">'+ic('more',1)+'</button>':'');
     $('#searchrow').hidden=true;
   }else{
-    h.innerHTML='<h1>Fox Musik</h1><button class="ib" data-act="search" aria-pressed="'+searchOpen+'" aria-label="Suchen">'+ic('search')+'</button><button class="ib" data-act="add" aria-label="Songs hinzufügen">'+ic('plus')+'</button>';
+    h.innerHTML='<h1>Fox Musik</h1><button class="ib" data-act="search" aria-pressed="'+searchOpen+'" aria-label="Suchen">'+ic('search')+'</button>'+(isNative()?'<button class="ib" data-act="scan" aria-label="Musik auf dem Handy neu suchen">'+ic('refresh')+'</button>':'')+'<button class="ib" data-act="add" aria-label="Songs hinzufügen">'+ic('plus')+'</button>';
     $('#searchrow').hidden=!searchOpen;
   }
 }
@@ -669,6 +685,8 @@ function createPlaylist(){
   toast(sctx.id?'Playlist „'+name+'“ erstellt und Titel hinzugefügt':'Playlist „'+name+'“ erstellt');
 }
 async function deleteSong(id){
+  var s0=byId(id);
+  if(s0&&s0.device&&state.hidden.indexOf(s0.key)<0)state.hidden.push(s0.key);
   var wasCur=cur&&cur.id===id;
   songs=songs.filter(function(s){return s.id!==id;});
   state.favs=state.favs.filter(function(x){return x!==id;});
@@ -715,6 +733,7 @@ document.addEventListener('click',function(e){
     case 'open':go(function(){view.detail={type:el.dataset.type,key:el.dataset.key};});break;
     case 'back':go(function(){view.detail=null;});break;
     case 'add':$('#files').click();break;
+    case 'scan':scanDevice(true);break;
     case 'search':
       searchOpen=!searchOpen;
       if(searchOpen){view.tab='tracks';}else{q='';$('#q').value='';}
@@ -758,6 +777,98 @@ document.addEventListener('keydown',function(e){
 document.addEventListener('dragover',function(e){e.preventDefault();});
 document.addEventListener('drop',function(e){e.preventDefault();if(e.dataTransfer&&e.dataTransfer.files)addFiles(Array.prototype.slice.call(e.dataTransfer.files));});
 
+/* ---------- automatic scan (Android app only) ---------- */
+var scanning=false, lastScan=0, coverBusy=false, mediaScan=null;
+function isNative(){try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(e){return false;}}
+function getScanPlugin(){
+  if(mediaScan)return mediaScan;
+  var C=window.Capacitor;if(!C)return null;
+  try{mediaScan=(C.Plugins&&C.Plugins.MediaScan)||(C.registerPlugin&&C.registerPlugin('MediaScan'))||null;}catch(e){}
+  return mediaScan;
+}
+function devUrl(s){return window.Capacitor.convertFileSrc('file://'+s.path.split('/').map(encodeURIComponent).join('/'));}
+async function scanDevice(manual){
+  var P=getScanPlugin();
+  if(!P||scanning)return;
+  scanning=true;renderMain();
+  if(manual)toast('Suche Musik auf dem Handy …',true);
+  try{
+    var r=await P.scan(), found=(r&&r.songs)||[];
+    var have=new Map();songs.forEach(function(s){if(s.device)have.set(s.key,s);});
+    var hidden=new Set(state.hidden), seen=new Set(), fresh=[], added=[];
+    found.forEach(function(x){
+      var key='dev|'+x.id;
+      if(hidden.has(key))return;
+      seen.add(key);
+      if(have.has(key)){var o=have.get(key);if(o.path!==x.path){o.path=x.path;fresh.push(o);}return;}
+      var n={id:'d'+x.id,key:key,device:true,title:x.title||String(x.path).split('/').pop().replace(/\.[^.]+$/,''),artist:x.artist||'',album:x.album||'',duration:x.duration||0,path:x.path,cover:null,added:Date.now()};
+      fresh.push(n);added.push(n);
+    });
+    var goneSongs=songs.filter(function(s){return s.device&&!seen.has(s.key);});
+    var goneIds=goneSongs.map(function(s){return s.id;});
+    added.forEach(function(s){songs.push(s);});
+    if(goneIds.length){
+      var gs=new Set(goneIds);
+      songs=songs.filter(function(s){return !gs.has(s.id);});
+      state.favs=state.favs.filter(function(x){return !gs.has(x);});
+      state.playlists.forEach(function(p){p.ids=p.ids.filter(function(x){return !gs.has(x);});});
+      queue=queue.filter(function(x){return !gs.has(x);});
+      qi=cur?queue.indexOf(cur.id):-1;
+      await dbBatch('songs',goneIds,true);
+      saveState();
+    }
+    await dbBatch('songs',fresh,false);
+    if(added.length)toast(added.length+(added.length===1?' neuer Titel':' neue Titel')+' gefunden');
+    else if(manual)toast('Keine neuen Titel gefunden.');
+  }catch(e){
+    var m=String((e&&e.message)||e);
+    toast(/permission/i.test(m)?'Bitte erlaube Fox Musik den Zugriff auf „Musik und Audio“ (Android-Einstellungen, Apps).':'Die Suche hat nicht geklappt.');
+  }
+  scanning=false;lastScan=Date.now();
+  render();coverJob();
+}
+async function fetchHead(url,n){
+  var ctl=new AbortController();
+  var res=await fetch(url,{headers:{Range:'bytes=0-'+(n-1)},signal:ctl.signal});
+  var rd=res.body.getReader(), parts=[], got=0;
+  while(got<n){var r=await rd.read();if(r.done)break;parts.push(r.value);got+=r.value.length;}
+  try{rd.cancel();}catch(e){}
+  try{ctl.abort();}catch(e){}
+  return new Blob(parts).slice(0,n);
+}
+async function deviceCover(s){
+  try{
+    var url=devUrl(s);
+    var u=new Uint8Array(await (await fetchHead(url,10)).arrayBuffer());
+    if(u[0]!==0x49||u[1]!==0x44||u[2]!==0x33)return null;
+    var size=((u[6]<<21)|(u[7]<<14)|(u[8]<<7)|u[9])+10;
+    var t=await readTags(await fetchHead(url,Math.min(size,6*1024*1024)));
+    return t.cover||null;
+  }catch(e){return null;}
+}
+async function coverJob(){
+  if(coverBusy)return;
+  coverBusy=true;
+  try{
+    var cache=new Map();
+    var todo=songs.filter(function(s){return s.device&&!s.cover&&!s.coverTried;});
+    for(var i=0;i<todo.length;i++){
+      var s=todo[i], ak=s.album?(s.album+'|'+s.artist):'', blob;
+      if(ak&&cache.has(ak))blob=cache.get(ak);
+      else{blob=await deviceCover(s);if(ak)cache.set(ak,blob);}
+      s.coverTried=true;
+      if(blob)s.cover=blob;
+      await dbPut('songs',s);
+      if(i%15===14)renderMain();
+    }
+  }catch(e){}
+  coverBusy=false;
+  render();if(cur)updateNow();
+}
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&isNative()&&ready&&Date.now()-lastScan>60000)scanDevice(false);
+});
+
 /* ---------- start ---------- */
 document.querySelectorAll('[data-ic]').forEach(function(el){el.innerHTML=ic(el.dataset.ic,el.dataset.f);});
 updateTransport();
@@ -769,12 +880,13 @@ render();
     var saved=await dbGet('meta','state');
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
-      state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;
+      state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
   updateTransport();
   render();
+  if(isNative()){scanDevice(false);}
 })();
 })();
 </script>
