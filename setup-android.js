@@ -59,4 +59,33 @@ if (!xml.includes('PlaybackService')) {
   console.log('Wiedergabe-Dienst eingetragen');
 }
 fs.writeFileSync(manifest, xml);
+
+// ---- Fuchs-Icon (Ordner "icons") ----
+const res = path.join('android', 'app', 'src', 'main', 'res');
+if (fs.existsSync('icons')) {
+  for (const d of fs.readdirSync('icons', { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    const to = path.join(res, d.name);
+    fs.mkdirSync(to, { recursive: true });
+    for (const f of fs.readdirSync(path.join('icons', d.name))) {
+      fs.copyFileSync(path.join('icons', d.name, f), path.join(to, f));
+    }
+  }
+  fs.mkdirSync(path.join(res, 'values'), { recursive: true });
+  fs.writeFileSync(path.join(res, 'values', 'fox_colors.xml'),
+    '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="fox_icon_bg">#2C66F5</color>\n</resources>\n');
+  const adaptive =
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n' +
+    '    <background android:drawable="@color/fox_icon_bg"/>\n' +
+    '    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n' +
+    '</adaptive-icon>\n';
+  fs.mkdirSync(path.join(res, 'mipmap-anydpi-v26'), { recursive: true });
+  fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26', 'ic_launcher.xml'), adaptive);
+  fs.writeFileSync(path.join(res, 'mipmap-anydpi-v26', 'ic_launcher_round.xml'), adaptive);
+  console.log('Fuchs-Icon eingebaut');
+} else {
+  console.error('FEHLER: Ordner "icons" fehlt. Schritt "Fuchs-Icon erzeugen" (make-icons.py) hat keine Bilder angelegt.');
+  process.exit(1);
+}
 console.log('OK: Musik-Suche und Wiedergabe-Dienst eingebaut');
