@@ -2,6 +2,9 @@
   "name": "fox-musik",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "capacitor:sync:before": "node setup-android.js"
+  },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
     "@capacitor/core": "^6.2.0"
