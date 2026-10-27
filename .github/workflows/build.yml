@@ -21,7 +21,14 @@ jobs:
           distribution: temurin
           java-version: 17
       - name: Web-Dateien vorbereiten
-        run: mkdir -p www && cp index.html www/index.html
+        run: |
+          mkdir -p www && cp index.html www/index.html
+          sed -i "s#__REPO__#${{ github.repository }}#" www/index.html
+      - name: Signierschlüssel einrichten
+        run: |
+          test -f fox-debug.keystore.b64 || { echo "FEHLER: fox-debug.keystore.b64 fehlt im Repo"; exit 1; }
+          mkdir -p ~/.android
+          base64 -d fox-debug.keystore.b64 > ~/.android/debug.keystore
       - name: Config prüfen
         run: |
           [ -f capacitor.config.json ] || cp capacitor_config.json capacitor.config.json
@@ -32,7 +39,9 @@ jobs:
         run: |
           pip install pillow
           python3 make-icons.py
-      - name: Musik-Suche und Wiedergabe-Dienst einbauen
+      - name: Musik-Suche, Wiedergabe-Dienst und Update einbauen
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
         run: node setup-android.js
       - run: npx cap sync android
       - name: APK bauen
