@@ -921,6 +921,17 @@ async function doUpdate(){
   var P=UPDP();if(!P||!upd)return;
   if(!updL){
     updL=true;
+    try{P.addListener('installResult',function(e){
+      var st=e&&e.status, m=String((e&&e.message)||'');
+      if(st===0)return;
+      if(st===3){toast('Installation abgebrochen.');return;}
+      var t='Android hat die Installation abgelehnt.';
+      if(st===7||st===5||/INCOMPATIBLE|signature|CONFLICT/i.test(m))t='Die Signatur der neuen Version passt nicht zur installierten App. Deinstalliere Fox Musik einmal und installiere die neueste Version von GitHub von Hand. Danach klappen Updates über die App.';
+      else if(/DOWNGRADE/i.test(m))t='Auf dem Handy ist schon eine gleiche oder neuere Version installiert.';
+      else if(st===2)t='Die Installation wurde blockiert, zum Beispiel durch Play Protect oder die Einstellung „Apps installieren“.';
+      else if(st===6)t='Auf dem Handy ist zu wenig Speicher frei.';
+      openSheet('<div class="shead"><div class="rt"><b>Installation fehlgeschlagen</b></div></div><div class="set"><div class="srow"><small style="color:var(--fg)">'+esc(t)+'</small><small style="margin-top:8px">Technisch: '+esc(m.slice(0,160)||('Code '+st))+'</small></div><button class="sitem" data-sa="cancel"><span>OK</span></button></div>');
+    });}catch(x){}
     try{P.addListener('progress',function(e){
       var p=e&&e.percent!=null?e.percent:0,a=$('#updP'),b=$('#updB');
       if(a)a.textContent='Lade … '+p+' %';

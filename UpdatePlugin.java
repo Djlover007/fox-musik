@@ -1,9 +1,13 @@
 package de.foxmusik.app;
 
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.net.Uri;
@@ -21,6 +25,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,6 +35,75 @@ import java.net.URL;
 // App-Update: laedt die neue APK vom GitHub-Release und startet die Installation.
 @CapacitorPlugin(name = "Updater")
 public class UpdatePlugin extends Plugin {
+
+    private static final String ACT_RESULT = "de.foxmusik.app.INSTALL_RESULT";
+    private BroadcastReceiver rx;
+
+    private synchronized void registerRx(Context ctx) {
+        if (rx != null) {
+            return;
+        }
+        rx = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, Intent i) {
+                int st = i.getIntExtra(PackageInstaller.EXTRA_STATUS, -999);
+                String msg = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+                if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                    Intent confirm = i.getParcelableExtra(Intent.EXTRA_INTENT);
+                    if (confirm != null) {
+                        confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try {
+                            c.startActivity(confirm);
+                        } catch (Exception e) {
+                            // ignore
+                        }
+                    }
+                    return;
+                }
+                JSObject o = new JSObject();
+                o.put("status", st);
+                o.put("message", msg == null ? "" : msg);
+                notifyListeners("installResult", o);
+            }
+        };
+        IntentFilter f = new IntentFilter(ACT_RESULT);
+        if (Build.VERSION.SDK_INT >= 33) {
+            ctx.registerReceiver(rx, f, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            ctx.registerReceiver(rx, f);
+        }
+    }
+
+    // Installation ueber den PackageInstaller: liefert bei Fehlern die genaue Ursache zurueck.
+    private void installViaSession(Context ctx, File f) throws Exception {
+        PackageInstaller pi = ctx.getPackageManager().getPackageInstaller();
+        PackageInstaller.SessionParams p = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        p.setAppPackageName(ctx.getPackageName());
+        if (Build.VERSION.SDK_INT >= 31) {
+            p.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+        }
+        int id = pi.createSession(p);
+        PackageInstaller.Session session = pi.openSession(id);
+        try {
+            InputStream in = new FileInputStream(f);
+            OutputStream out = session.openWrite("update.apk", 0, f.length());
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            session.fsync(out);
+            in.close();
+            out.close();
+            registerRx(ctx);
+            Intent cb = new Intent(ACT_RESULT).setPackage(ctx.getPackageName());
+            int fl = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+            PendingIntent pend = PendingIntent.getBroadcast(ctx, id, cb, fl);
+            session.commit(pend.getIntentSender());
+        } finally {
+            session.close();
+        }
+    }
 
     @PluginMethod
     public void info(PluginCall call) {
@@ -240,6 +314,13 @@ public class UpdatePlugin extends Plugin {
             if (err != null) {
                 call.reject(err);
                 return;
+            }
+            try {
+                installViaSession(ctx, f);
+                call.resolve();
+                return;
+            } catch (Exception e) {
+                // Fallback: klassische Installation ueber den Paketinstaller
             }
             Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".foxupdate", f);
             Intent i = new Intent(Intent.ACTION_VIEW);
