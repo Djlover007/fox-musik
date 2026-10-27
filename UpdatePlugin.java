@@ -1,5 +1,6 @@
 package de.foxmusik.app;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -7,6 +8,8 @@ import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.Settings;
 
 import androidx.core.content.FileProvider;
@@ -20,6 +23,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -140,6 +144,79 @@ public class UpdatePlugin extends Plugin {
             // Pruefung nicht moeglich: Installation trotzdem versuchen
         }
         return null;
+    }
+
+    // Speichert die Sicherung (JSON) im Ordner "Downloads" bzw. oeffnet bei aelteren Geraeten das Teilen-Menue.
+    @PluginMethod
+    public void saveText(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            String name = call.getString("name", "fox-musik-sicherung.json");
+            String text = call.getString("text", "");
+            byte[] data = text.getBytes("UTF-8");
+            if (Build.VERSION.SDK_INT >= 29) {
+                ContentValues v = new ContentValues();
+                v.put(MediaStore.Downloads.DISPLAY_NAME, name);
+                v.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                Uri u = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (u == null) {
+                    call.reject("Speichern nicht moeglich");
+                    return;
+                }
+                OutputStream os = ctx.getContentResolver().openOutputStream(u);
+                os.write(data);
+                os.close();
+                JSObject r = new JSObject();
+                r.put("where", "Downloads");
+                call.resolve(r);
+            } else {
+                File f = new File(ctx.getCacheDir(), name);
+                FileOutputStream fo = new FileOutputStream(f);
+                fo.write(data);
+                fo.close();
+                Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".foxupdate", f);
+                Intent s = new Intent(Intent.ACTION_SEND);
+                s.setType("application/json");
+                s.putExtra(Intent.EXTRA_STREAM, uri);
+                s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent ch = Intent.createChooser(s, "Sicherung speichern");
+                ch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(ch);
+                JSObject r = new JSObject();
+                r.put("where", "Teilen");
+                call.resolve(r);
+            }
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    // Oeffnet die Spotify-App (oder open.spotify.com) fuer eine Suche.
+    @PluginMethod
+    public void openUrl(PluginCall call) {
+        Context ctx = getContext();
+        String url = call.getString("url", "");
+        String fb = call.getString("fallback", "");
+        if (tryOpen(ctx, url) || tryOpen(ctx, fb)) {
+            call.resolve();
+        } else {
+            call.reject("Keine App gefunden");
+        }
+    }
+
+    private boolean tryOpen(Context ctx, String url) {
+        if (url == null || !(url.startsWith("spotify:") || url.startsWith("https://open.spotify.com/"))) {
+            return false;
+        }
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @PluginMethod

@@ -318,7 +318,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},autoUpd:true,speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},wish:[],autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'tracks',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -697,6 +697,7 @@ function saveStatsSoon(){clearTimeout(statT);statT=setTimeout(saveState,1500);}
 function plSongs(p){return p.ids.map(byId).filter(Boolean);}
 function detailInfo(){
   var d=view.detail;if(!d)return null;
+  if(d.type==='wish')return {name:'Spotify-Wunschliste',songs:[],sub:'',kind:'fav',icon:'listplus'};
   if(d.type==='pl'){
     var sm=smartDef(d.key);
     if(sm)return {name:sm[1],songs:smartList(d.key),sub:sm[3],kind:'fav',icon:sm[2],empty:sm[4]};
@@ -744,6 +745,7 @@ function plRow(key,name,arr,kind,icon){
 function playlistsHTML(){
   var h='<div class="row"><button class="rowmain" data-act="newpl"><div class="cov tile add">'+ic('plus')+'</div><span class="rt"><b>Neue Playlist</b></span></button></div>';
   SMART.forEach(function(m){h+=plRow(m[0],m[1],smartList(m[0]),'fav',m[2]);});
+  h+=wishRow();
   state.playlists.forEach(function(p){h+=plRow(p.id,p.name,plSongs(p),'pl');});
   return h;
 }
@@ -763,6 +765,7 @@ function artistsHTML(){
   }).join('');
 }
 function detailHTML(){
+  if(view.detail&&view.detail.type==='wish')return wishHTML();
   var info=detailInfo();
   if(!info){view.detail=null;return '';}
   var fc=firstCover(info.songs), cov;
@@ -819,7 +822,8 @@ function songSheet(id){
   h+=sItem('next','list','Als Nächstes abspielen');
   h+=sItem('addpl','listplus','Zu Playlist hinzufügen');
   h+=sItem('fav','heart',isFav?'Aus Favoriten entfernen':'Zu Favoriten hinzufügen');
-  if(view.detail&&view.detail.type==='pl'&&view.detail.key!=='fav')h+=sItem('rmpl','trash','Aus dieser Playlist entfernen');
+  h+=sItem('spot','search','In Spotify suchen');
+  if(view.detail&&view.detail.type==='pl'&&state.playlists.some(function(p){return p.id===view.detail.key;}))h+=sItem('rmpl','trash','Aus dieser Playlist entfernen');
   h+=sItem('del','trash','Aus der App löschen',' danger');
   openSheet(h);
 }
@@ -939,6 +943,178 @@ async function doUpdate(){
     else toast('Update fehlgeschlagen: '+m.slice(0,220));
   }
 }
+
+/* ---------- Spotify: Suche und Wunschliste ---------- */
+function spotSearch(q){
+  var enc=encodeURIComponent(String(q||'').trim()), P=UPDP();
+  if(P){P.openUrl({url:'spotify:search:'+enc,fallback:'https://open.spotify.com/search/'+enc}).catch(function(){toast('Spotify lässt sich nicht öffnen.');});}
+  else window.open('https://open.spotify.com/search/'+enc,'_blank');
+}
+function nt(x){return nk(x).replace(/\s*[\(\[].*?[\)\]]/g,'').replace(/\s+-\s+.*$/,'').trim();}
+function artSet(x){return nk(x).split(/\s*(?:;|,|&|\bfeat\.?|\bft\.?)\s*/).filter(Boolean);}
+function wishIndex(){var m={};songs.forEach(function(s){var k=nt(s.title);(m[k]||(m[k]=[])).push(s);});return m;}
+function wishMatch(w,idx){
+  var c=idx[nt(w.t)];if(!c)return null;
+  var wa=artSet(w.a);
+  for(var i=0;i<c.length;i++){
+    var la=artSet(c[i].artist);
+    if(!wa.length||!la.length||wa.some(function(a){return la.some(function(l){return l.indexOf(a)>-1||a.indexOf(l)>-1;});}))return c[i];
+  }
+  return null;
+}
+function parseCSV(t){
+  var first=t.split(/\r?\n/,1)[0]||'', dl=first.split(';').length>first.split(',').length?';':',';
+  var rows=[],row=[],f='',q=false,i,c;
+  for(i=0;i<t.length;i++){
+    c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++;}else q=false;}else f+=c;}
+    else if(c==='"')q=true;
+    else if(c===dl){row.push(f);f='';}
+    else if(c==='\n'||c==='\r'){
+      if(c==='\r'&&t[i+1]==='\n')i++;
+      row.push(f);f='';
+      if(row.length>1||row[0]!=='')rows.push(row);
+      row=[];
+    }else f+=c;
+  }
+  row.push(f);if(row.length>1||row[0]!=='')rows.push(row);
+  return rows;
+}
+function parseWish(text){
+  text=text.replace(/^\uFEFF/,'');
+  var rows=parseCSV(text), out=[], h=(rows[0]||[]).map(nk), ti=-1, ai=-1;
+  h.forEach(function(x,i){
+    if(ti<0&&/^(track name|track|title|titel|song|song name|name)$/.test(x))ti=i;
+    if(ai<0&&/artist|interpret|künstler/.test(x)&&!/album|id|uri/.test(x))ai=i;
+  });
+  if(ti>-1){
+    rows.slice(1).forEach(function(r){var t=(r[ti]||'').trim();if(t)out.push({t:t,a:ai>-1?(r[ai]||'').trim():''});});
+  }else{
+    text.split(/\r?\n/).forEach(function(l){
+      l=l.trim();if(!l)return;
+      var m=l.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+      out.push(m?{t:m[2].trim(),a:m[1].trim()}:{t:l,a:''});
+    });
+  }
+  return out;
+}
+function importWish(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='.csv,.txt,text/*,application/csv,application/vnd.ms-excel';inp.style.display='none';
+  inp.onchange=function(){
+    var f=inp.files&&inp.files[0];inp.remove();if(!f)return;
+    var r=new FileReader();
+    r.onload=function(){
+      var list=parseWish(String(r.result)), have={}, add=0;
+      state.wish.forEach(function(w){have[nk(w.t)+'|'+artSet(w.a)[0]]=1;});
+      list.forEach(function(w){var k=nk(w.t)+'|'+artSet(w.a)[0];if(!have[k]){have[k]=1;state.wish.push(w);add++;}});
+      saveState();render();
+      toast(add?add+' Titel zur Wunschliste hinzugefügt.':'Keine neuen Titel in der Datei gefunden.');
+    };
+    r.readAsText(f);
+  };
+  document.body.appendChild(inp);inp.click();
+}
+function wishRow(){
+  var idx=wishIndex(), n=state.wish.length, have=state.wish.filter(function(w){return wishMatch(w,idx);}).length;
+  return '<div class="row"><button class="rowmain" data-act="open" data-type="wish" data-key="wish"><div class="cov tile fav">'+ic('listplus',1)+'</div><span class="rt"><b>Spotify-Wunschliste</b><small>'+(n?have+' von '+n+' auf dem Handy':'Titel aus Spotify als CSV importieren')+'</small></span></button></div>';
+}
+function wishHTML(){
+  var idx=wishIndex(), have=[], items=state.wish.map(function(w,i){var s=wishMatch(w,idx);if(s)have.push(s);return {w:w,i:i,s:s};});
+  listIds=have.map(function(s){return s.id;});
+  var h='<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic('listplus',1)+'</div><div class="dtxt"><h2>Spotify-Wunschliste</h2><p>'+(items.length?have.length+' von '+items.length+' auf dem Handy':'Noch leer')+'</p></div></div>';
+  h+='<div class="bar"><button class="pill pri" data-act="wimport">'+ic('plus')+'CSV importieren</button>'+(have.length?'<button class="pill" data-act="playall">'+ic('play',1)+'Vorhandene</button>':'')+(items.length?'<button class="pill" data-act="wclear">'+ic('trash')+'Leeren</button>':'')+'</div>';
+  if(!items.length)return h+'<p class="none">Exportiere eine Spotify-Playlist als CSV, zum Beispiel mit exportify.net im Browser, und wähle die Datei hier aus. Dann siehst du, welche Titel schon auf dem Handy sind und welche fehlen. Eine Textdatei mit Zeilen „Interpret - Titel“ geht auch.</p>';
+  var pi=0;
+  items.forEach(function(x){
+    if(x.s){
+      h+='<div class="row"><button class="rowmain" data-act="play" data-i="'+pi+'">'+coverHTML(x.s,'rc')+'<span class="rt"><b>'+esc(x.s.title)+'</b><small>'+esc(x.s.artist||NOARTIST)+' · auf dem Handy</small></span></button></div>';
+      pi++;
+    }else{
+      h+='<div class="row"><div class="rowmain">'+coverHTML(null,'rc',x.w.t,'note')+'<span class="rt"><b>'+esc(x.w.t)+'</b><small>'+esc(x.w.a||'Unbekannt')+' · fehlt</small></span></div><button class="pill" data-act="wspot" data-w="'+x.i+'">Spotify</button></div>';
+    }
+  });
+  return h;
+}
+
+/* ---------- Sicherung: Favoriten, Playlists, Zähler, Einstellungen ---------- */
+function nk(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
+async function exportBackup(){
+  var all={};
+  function note(id){if(all[id])return;var s=byId(id);if(s)all[id]={t:s.title,a:s.artist||'',d:Math.round(s.duration||0)};}
+  state.favs.forEach(note);
+  state.playlists.forEach(function(p){(p.ids||[]).forEach(note);});
+  Object.keys(state.stats||{}).forEach(note);
+  var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},
+    settings:{speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
+  var text=JSON.stringify(data), name='fox-musik-sicherung-'+new Date().toISOString().slice(0,10)+'.json';
+  var P=UPDP();
+  try{
+    if(P){
+      var r=await P.saveText({name:name,text:text});
+      toast(r&&r.where==='Downloads'?'Sicherung gespeichert: Ordner „Downloads“, Datei '+name:'Wähle im Menü, wohin die Sicherung soll.');
+    }else{
+      var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;
+      document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1000);
+    }
+  }catch(e){toast('Sicherung fehlgeschlagen: '+String((e&&e.message)||e).slice(0,120));}
+}
+function importBackup(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='application/json,.json';inp.style.display='none';
+  inp.onchange=function(){
+    var f=inp.files&&inp.files[0];inp.remove();if(!f)return;
+    var r=new FileReader();r.onload=function(){applyBackup(String(r.result));};r.readAsText(f);
+  };
+  document.body.appendChild(inp);inp.click();
+}
+async function applyBackup(text){
+  var d;try{d=JSON.parse(text);}catch(e){toast('Das ist keine gültige Sicherungsdatei.');return;}
+  if(!d||d.app!=='fox-musik'){toast('Das ist keine Fox-Musik-Sicherung.');return;}
+  toast('Lese Sicherung …');
+  if(isNative()){
+    var t0=Date.now();await scanDevice(false);
+    while(scanning&&Date.now()-t0<20000)await new Promise(function(r){setTimeout(r,200);});
+  }
+  var info=d.songs||{}, miss=0, cache={};
+  function mapId(id){
+    if(Object.prototype.hasOwnProperty.call(cache,id))return cache[id];
+    var r=null, inf=info[id], s=byId(id);
+    if(s&&(!inf||nk(s.title)===nk(inf.t)))r=s.id;
+    else if(inf){
+      var c=songs.filter(function(x){return nk(x.title)===nk(inf.t)&&nk(x.artist)===nk(inf.a);});
+      if(c.length>1){var c2=c.filter(function(x){return Math.abs((x.duration||0)-(inf.d||0))<=3;});if(c2.length)c=c2;}
+      if(c.length)r=c[0].id;
+    }
+    cache[id]=r;if(!r)miss++;return r;
+  }
+  var nf=0, np=0;
+  (d.favs||[]).forEach(function(id){var m=mapId(id);if(m&&state.favs.indexOf(m)<0){state.favs.push(m);nf++;}});
+  (d.playlists||[]).forEach(function(p){
+    var ids=(p.ids||[]).map(mapId).filter(Boolean);
+    var ex=state.playlists.filter(function(q){return nk(q.name)===nk(p.name);})[0];
+    if(ex){ids.forEach(function(i){if(ex.ids.indexOf(i)<0)ex.ids.push(i);});}
+    else{
+      var q=Object.assign({},p);q.ids=ids;
+      if(state.playlists.some(function(z){return z.id===q.id;}))q.id=uid();
+      state.playlists.push(q);np++;
+    }
+  });
+  var st=d.stats||{};
+  Object.keys(st).forEach(function(id){
+    var m=mapId(id);if(!m)return;
+    var o=state.stats[m]||(state.stats[m]={n:0,last:0});
+    o.n=Math.max(o.n||0,st[id].n||0);o.last=Math.max(o.last||0,st[id].last||0);
+  });
+  var se=d.settings||{};
+  if(se.speed)state.speed=se.speed;
+  if(typeof se.fade==='number')state.fade=se.fade;
+  if(typeof se.skip==='boolean'){state.skip=se.skip;if(se.skip)silenceInit(audio);}
+  if(typeof se.lock==='boolean')state.lock=se.lock;
+  if(typeof se.autoUpd==='boolean')state.autoUpd=se.autoUpd;
+  if(typeof se.shuffle==='boolean')state.shuffle=se.shuffle;
+  if(typeof se.repeat==='number')state.repeat=se.repeat;
+  applySpeed();saveState();closeSheet();render();updateTransport();
+  toast('Sicherung geladen: '+nf+' Favoriten, '+np+' Playlists'+(miss?' ('+miss+' Titel nicht gefunden)':''));
+}
 function fmtSpeed(){return String(state.speed.toFixed(2)).replace(/0$/,'').replace('.',',')+'x';}
 function fmtFade(){return state.fade>0?state.fade+(state.fade===1?' Sekunde':' Sekunden'):'Aus';}
 function sleepLabel(){
@@ -959,6 +1135,8 @@ function settingsSheet(){
     h+='<div class="srow"><button class="sleepbtn" data-sa="upd"><b>App-Update</b><small id="vUpd">'+(appVer?'Version '+appVer.code+' · Tippen zum Prüfen':'Tippen zum Prüfen')+(upd?' · Neu: '+upd.ver+(upd.done?' (bereit)':''):'')+'</small></button></div>';
     h+='<div class="srow line"><div><b>Updates automatisch suchen und laden</b><small>Die Installation bestätigst du selbst</small></div><input type="checkbox" class="sw" data-set="autoupd"'+(state.autoUpd?' checked':'')+' aria-label="Updates automatisch suchen und laden"></div>';
   }
+  h+='<div class="srow"><button class="sleepbtn" data-sa="bkexport"><b>Sicherung erstellen</b><small>Favoriten, Playlists und Zähler als Datei speichern</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="bkimport"><b>Sicherung laden</b><small>Daten aus einer Sicherungsdatei zurückholen</small></button></div>';
   h+='</div>';
   openSheet(h);
 }
@@ -1017,6 +1195,9 @@ function handleSheet(act,el){
     case 'settings':settingsSheet();break;
     case 'upd':checkUpdate(true);break;
     case 'updgo':doUpdate();break;
+    case 'spot':{var ss=byId(sctx.id);closeSheet();if(ss)spotSearch((ss.artist||'')+' '+ss.title);break;}
+    case 'bkexport':exportBackup();break;
+    case 'bkimport':importBackup();break;
     case 'updlater':try{localStorage.setItem('fox-upd-skip',String(upd?upd.ver:0));}catch(e){}closeSheet();break;
     case 'sleepmenu':sleepSheet();break;
     case 'sleepset':{
@@ -1066,6 +1247,9 @@ document.addEventListener('click',function(e){
       render();if(searchOpen)$('#q').focus();break;
     case 'play':startQueue(listIds,parseInt(el.dataset.i,10));break;
     case 'playall':if(listIds.length)startQueue(listIds,0);break;
+    case 'wimport':importWish();break;
+    case 'wclear':if(window.confirm('Wunschliste wirklich leeren?')){state.wish=[];saveState();render();}break;
+    case 'wspot':{var ww=state.wish[parseInt(el.dataset.w,10)];if(ww)spotSearch((ww.a?ww.a+' ':'')+ww.t);break;}
     case 'shuffleall':
       if(listIds.length){state.shuffle=true;saveState();startQueue(listIds,Math.floor(Math.random()*listIds.length));}break;
     case 'more':sctx={};songSheet(el.dataset.id);break;
@@ -1273,7 +1457,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.autoUpd=saved.autoUpd!==false;state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
