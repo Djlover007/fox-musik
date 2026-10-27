@@ -848,14 +848,26 @@ async function loadVer(){
   var P=UPDP();if(!P||appVer)return;
   try{var i=await P.info();appVer={code:Number(i.versionCode),name:String(i.versionName||'')};}catch(e){}
 }
+function repoName(){
+  if(REPO.indexOf('__')!==0)return REPO;
+  try{return localStorage.getItem('fox-repo')||'';}catch(e){return '';}
+}
 async function checkUpdate(manual){
   var P=UPDP();if(!P)return;
   await loadVer();
-  if(REPO.indexOf('__')===0){if(manual)toast('Update-Adresse fehlt: Die App wurde nicht über den GitHub-Build erstellt.');return;}
+  var repo=repoName();
+  if(!repo){
+    if(!manual)return;
+    var v=window.prompt('GitHub-Repository eingeben, so wie in der Adresse auf github.com (Beispiel: meinname/fox-musik):','');
+    v=v?v.trim().replace(/^https?:\/\/github\.com\//i,'').replace(/\/+$/,''):'';
+    if(!/^[\w.-]+\/[\w.-]+$/.test(v)){toast('Ohne Repository-Namen kann ich nicht nach Updates suchen.');return;}
+    try{localStorage.setItem('fox-repo',v);}catch(e){}
+    repo=v;
+  }
   if(manual)toast('Suche nach Updates …');
   try{
     var ctl=new AbortController(), t=setTimeout(function(){ctl.abort();},12000);
-    var r=await fetch('https://api.github.com/repos/'+REPO+'/releases/latest',{signal:ctl.signal,headers:{'Accept':'application/vnd.github+json'}});
+    var r=await fetch('https://api.github.com/repos/'+repo+'/releases/latest',{signal:ctl.signal,headers:{'Accept':'application/vnd.github+json'}});
     clearTimeout(t);
     if(!r.ok)throw new Error('GitHub '+r.status);
     var j=await r.json();
