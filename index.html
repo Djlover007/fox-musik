@@ -318,7 +318,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'tracks',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -837,7 +837,7 @@ function confirmSheet(title,text,yes,label){
   openSheet('<div class="sform"><h3>'+title+'</h3><p>'+text+'</p><button class="btn warn" data-sa="'+yes+'">'+label+'</button><button class="btn ghost" data-sa="cancel">Abbrechen</button></div>');
 }
 /* ---------- App-Update über GitHub ---------- */
-var REPO='__REPO__', appVer=null, upd=null, updL=false, UP=null;
+var REPO='Djlover007/fox-musik', appVer=null, upd=null, updL=false, UP=null;
 function UPDP(){
   if(UP)return UP;
   if(!isNative())return null;
@@ -876,18 +876,42 @@ async function checkUpdate(manual){
     if(!asset)throw new Error('keine APK im Release');
     if(appVer&&ver>appVer.code){
       if(!upd||upd.ver!==ver)upd={ver:ver,url:asset.browser_download_url,size:asset.size,done:false};
-      if(manual)updateSheet();else toast('Neue Version '+ver+' verfügbar. Einstellungen, App-Update.');
+      if(manual){updateSheet();}
+      else if(state.autoUpd){autoGet();}
+      else toast('Neue Version '+ver+' verfügbar. Einstellungen, App-Update.');
     }else if(manual)toast('Du hast die neueste Version ('+(appVer?appVer.code:'?')+').');
   }catch(e){
     if(manual)toast('Update-Prüfung fehlgeschlagen: '+String((e&&e.message)||e).slice(0,120)+' (Ist das GitHub-Repository öffentlich?)');
   }
 }
+var autoBusy=false;
+function skippedVer(){try{return Number(localStorage.getItem('fox-upd-skip')||0);}catch(e){return 0;}}
+async function autoGet(){
+  var P=UPDP();if(!P||!upd||autoBusy)return;
+  autoBusy=true;
+  try{
+    if(!upd.done){await P.download({url:upd.url});upd.done=true;}
+    var open=$('#sheet').classList.contains('open');
+    if(skippedVer()!==upd.ver){
+      if(open)toast('Update '+upd.ver+' ist bereit. Einstellungen, App-Update.');
+      else updateSheet();
+    }
+  }catch(e){}
+  autoBusy=false;
+}
+function autoCheck(){
+  if(!state.autoUpd||!isNative())return;
+  var t=0;try{t=Number(localStorage.getItem('fox-upd-t')||0);}catch(e){}
+  if(Date.now()-t<30*60000)return;
+  try{localStorage.setItem('fox-upd-t',String(Date.now()));}catch(e){}
+  checkUpdate(false);
+}
 function updateSheet(){
   var mb=upd.size?' · '+(upd.size/1048576).toFixed(1).replace('.',',')+' MB':'';
   openSheet('<div class="shead"><div class="rt"><b>Update verfügbar</b></div></div><div class="set">'+
     '<div class="srow"><b>Version '+upd.ver+'</b><small>Installiert: '+(appVer?appVer.code:'?')+mb+'</small></div>'+
-    '<button class="sitem" data-sa="updgo"><span>Jetzt aktualisieren</span></button>'+
-    '<button class="sitem" data-sa="cancel"><span>Später</span></button></div>');
+    '<button class="sitem" data-sa="updgo"><span>'+(upd.done?'Jetzt installieren':'Jetzt aktualisieren')+'</span></button>'+
+    '<button class="sitem" data-sa="updlater"><span>Später</span></button></div>');
 }
 async function doUpdate(){
   var P=UPDP();if(!P||!upd)return;
@@ -932,7 +956,8 @@ function settingsSheet(){
   if(isNative())h+='<div class="srow line"><div><b>Musik über Sperrbildschirm steuern</b><small>Zeigt Titel und Tasten auch bei gesperrtem Handy</small></div><input type="checkbox" class="sw" data-set="lock"'+(state.lock?' checked':'')+' aria-label="Musik über Sperrbildschirm steuern"></div>';
   if(isNative()){
     loadVer().then(function(){var el=$('#vUpd');if(el&&appVer)el.textContent='Version '+appVer.code+' · Tippen zum Prüfen';});
-    h+='<div class="srow"><button class="sleepbtn" data-sa="upd"><b>App-Update</b><small id="vUpd">'+(appVer?'Version '+appVer.code+' · Tippen zum Prüfen':'Tippen zum Prüfen')+(upd?' · Neu: '+upd.ver:'')+'</small></button></div>';
+    h+='<div class="srow"><button class="sleepbtn" data-sa="upd"><b>App-Update</b><small id="vUpd">'+(appVer?'Version '+appVer.code+' · Tippen zum Prüfen':'Tippen zum Prüfen')+(upd?' · Neu: '+upd.ver+(upd.done?' (bereit)':''):'')+'</small></button></div>';
+    h+='<div class="srow line"><div><b>Updates automatisch suchen und laden</b><small>Die Installation bestätigst du selbst</small></div><input type="checkbox" class="sw" data-set="autoupd"'+(state.autoUpd?' checked':'')+' aria-label="Updates automatisch suchen und laden"></div>';
   }
   h+='</div>';
   openSheet(h);
@@ -961,7 +986,8 @@ function onSetting(e){
     if(state.skip){silenceInit(audio);}else{audio._fast=false;audio.playbackRate=state.speed;}
     if(state.skip&&!audio._an)toast('Wirkt ab dem nächsten Titel.');
   }else if(k==='lock'){state.lock=el.checked;}
-  if(e.type==='change'||k==='skip'||k==='lock'){saveState();pushNative();}
+  else if(k==='autoupd'){state.autoUpd=el.checked;if(state.autoUpd)autoCheck();}
+  if(e.type==='change'||k==='skip'||k==='lock'||k==='autoupd'){saveState();pushNative();}
 }
 function createPlaylist(){
   var inp=$('#plname'), name=(inp&&inp.value||'').trim();
@@ -991,6 +1017,7 @@ function handleSheet(act,el){
     case 'settings':settingsSheet();break;
     case 'upd':checkUpdate(true);break;
     case 'updgo':doUpdate();break;
+    case 'updlater':try{localStorage.setItem('fox-upd-skip',String(upd?upd.ver:0));}catch(e){}closeSheet();break;
     case 'sleepmenu':sleepSheet();break;
     case 'sleepset':{
       var v=el.dataset.v;sleep.track=false;sleep.end=0;
@@ -1230,6 +1257,8 @@ async function coverJob(){
 window.addEventListener('fox-permission',function(){scanDevice(false);});
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'&&isNative()&&ready&&Date.now()-lastScan>60000)scanDevice(false);
+
+  if(document.visibilityState==='visible'&&isNative()&&ready)autoCheck();
 });
 
 /* ---------- start ---------- */
@@ -1244,14 +1273,14 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.autoUpd=saved.autoUpd!==false;state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
   updateTransport();
   render();
   applySpeed();if(state.skip)silenceInit(audio);
-  if(isNative()){initNative();scanDevice(false);setTimeout(function(){checkUpdate(false);},5000);}
+  if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,5000);}
 })();
 })();
 </script>
