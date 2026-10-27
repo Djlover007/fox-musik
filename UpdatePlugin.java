@@ -315,6 +315,29 @@ public class UpdatePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void spotifyAuth(PluginCall call) {
+        Intent i = new Intent(getContext(), SpotifyLoginActivity.class);
+        i.putExtra("auth_url", call.getString("url", ""));
+        i.putExtra("redirect", call.getString("redirect", ""));
+        startActivityForResult(call, i, "spotifyAuthDone");
+    }
+
+    @ActivityCallback
+    private void spotifyAuthDone(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        Intent d = result.getData();
+        if (result.getResultCode() == android.app.Activity.RESULT_OK && d != null && d.getStringExtra("url") != null) {
+            JSObject o = new JSObject();
+            o.put("url", d.getStringExtra("url"));
+            call.resolve(o);
+        } else {
+            call.reject("abgebrochen");
+        }
+    }
+
+    @PluginMethod
     public void spotifyStatus(PluginCall call) {
         JSObject o = new JSObject();
         o.put("loggedIn", SpotifyLoginActivity.loggedIn());

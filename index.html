@@ -700,6 +700,7 @@ function plSongs(p){return p.ids.map(byId).filter(Boolean);}
 function detailInfo(){
   var d=view.detail;if(!d)return null;
   if(d.type==='wish')return {name:'Spotify-Wunschliste',songs:[],sub:'',kind:'fav',icon:'listplus'};
+  if(d.type==='spapi')return {name:'Spotify',songs:[],sub:'Spotify',kind:'fav',icon:'list'};
   if(d.type==='spot')return {name:'Spotify-Playlists',songs:[],sub:'',kind:'fav',icon:'list'};
   if(d.type==='spotpl'){var sp=state.spl.find(function(x){return x.id===d.key;});return sp?{name:sp.name,songs:[],sub:'Spotify',kind:'fav',icon:'list'}:null;}
   if(d.type==='pl'){
@@ -773,6 +774,7 @@ function detailHTML(){
   if(view.detail&&view.detail.type==='wish')return wishHTML();
   if(view.detail&&view.detail.type==='spot')return spotListHTML();
   if(view.detail&&view.detail.type==='spotpl')return spotEmbedHTML(view.detail.key);
+  if(view.detail&&view.detail.type==='spapi')return spPlaylistHTML(view.detail.key);
   var info=detailInfo();
   if(!info){view.detail=null;return '';}
   var fc=firstCover(info.songs), cov;
@@ -1116,6 +1118,172 @@ function spLoginBar(){
     ?'<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('heart',1)+'</div><span class="rt"><b>Bei Spotify angemeldet</b><small>Mit Premium spielt der Player ganze Titel</small></span></div><button class="pill" data-act="splogout">Abmelden</button></div>'
     :'<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('list',1)+'</div><span class="rt"><b>Nicht angemeldet</b><small>Ohne Anmeldung nur 30-Sekunden-Ausschnitte</small></span></div><button class="pill pri" data-act="splogin">Anmelden</button></div>';
 }
+/* ---------- Spotify-Konto: eigene Playlists + Steuerung der Spotify-App (Premium) ---------- */
+var SP={cid:'',tok:null,exp:0,ref:null}, SP_REDIR='foxmusik://callback', spCache={}, spNowT=null, spBusy=false;
+var SP_SCOPES='playlist-read-private playlist-read-collaborative user-library-read user-read-playback-state user-modify-playback-state user-read-currently-playing';
+(function(){try{var o=JSON.parse(localStorage.getItem('fox-sp')||'{}');SP.cid=o.cid||'';SP.tok=o.tok||null;SP.exp=o.exp||0;SP.ref=o.ref||null;}catch(e){}})();
+function spSave(){try{localStorage.setItem('fox-sp',JSON.stringify(SP));}catch(e){}}
+function spOn(){return !!SP.ref;}
+function spRand(n){var a=new Uint8Array(n);crypto.getRandomValues(a);return Array.prototype.map.call(a,function(b){return ('0'+(b%62).toString(36)).slice(-1);}).join('')+Date.now().toString(36);}
+function b64url(buf){var b=new Uint8Array(buf),s='';for(var i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function spMsg(e){return String((e&&e.message)||e).slice(0,160);}
+async function spToken(params){
+  params.client_id=SP.cid;
+  var r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(params).toString()});
+  var j=await r.json().catch(function(){return {};});
+  if(!r.ok||!j.access_token)throw new Error(j.error_description||j.error||('Token '+r.status));
+  SP.tok=j.access_token;SP.exp=Date.now()+((j.expires_in||3600)-60)*1000;if(j.refresh_token)SP.ref=j.refresh_token;spSave();
+}
+async function spConnect(){
+  var P=UPDP();if(!P||!P.spotifyAuth){toast('Das geht nur in der Android-App (neu bauen?).');return;}
+  if(!SP.cid){
+    var v=window.prompt('Client-ID deiner Spotify-App eingeben (developer.spotify.com, Dashboard, deine App, Settings):','');
+    v=(v||'').trim();
+    if(!/^[0-9a-f]{32}$/i.test(v)){toast('Das sieht nicht wie eine Client-ID aus (32 Zeichen, Ziffern und a bis f).');return;}
+    SP.cid=v;spSave();
+  }
+  try{
+    var ver=spRand(64), st=spRand(12);
+    var ch=b64url(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ver)));
+    var url='https://accounts.spotify.com/authorize?'+new URLSearchParams({client_id:SP.cid,response_type:'code',redirect_uri:SP_REDIR,code_challenge_method:'S256',code_challenge:ch,scope:SP_SCOPES,state:st}).toString();
+    var r=await P.spotifyAuth({url:url,redirect:SP_REDIR});
+    var q=new URLSearchParams(String(r.url).split('?')[1]||'');
+    if(q.get('error')){toast('Spotify hat abgelehnt: '+q.get('error'));return;}
+    if(q.get('state')!==st||!q.get('code')){toast('Anmeldung ungültig, bitte nochmal.');return;}
+    await spToken({grant_type:'authorization_code',code:q.get('code'),redirect_uri:SP_REDIR,code_verifier:ver});
+    spCache={};toast('Spotify verbunden.');render();
+  }catch(e){
+    var m=spMsg(e);
+    if(/abgebrochen/.test(m))toast('Verbindung abgebrochen.');
+    else toast('Verbinden fehlgeschlagen: '+m);
+  }
+}
+function spDisconnect(){
+  if(!window.confirm('Spotify-Konto trennen?'))return;
+  SP.tok=null;SP.ref=null;SP.exp=0;spSave();spCache={};render();toast('Spotify getrennt.');
+}
+function spResetId(){
+  if(!window.confirm('Client-ID löschen und Spotify trennen?'))return;
+  SP={cid:'',tok:null,exp:0,ref:null};spSave();spCache={};render();
+}
+async function spApi(path,opt,retry){
+  if(!SP.ref)throw new Error('nicht verbunden');
+  if(!SP.tok||Date.now()>SP.exp)await spToken({grant_type:'refresh_token',refresh_token:SP.ref});
+  opt=opt||{};opt.headers=Object.assign({'Authorization':'Bearer '+SP.tok},opt.body?{'Content-Type':'application/json'}:{},opt.headers||{});
+  var r=await fetch('https://api.spotify.com/v1'+path,opt);
+  if(r.status===401&&!retry){SP.tok=null;return spApi(path,opt,true);}
+  if(r.status===204||r.status===202)return null;
+  var t=await r.text(), j=null;try{j=t?JSON.parse(t):null;}catch(e){}
+  if(!r.ok){var err=new Error((j&&j.error&&(j.error.message||j.error))||('Fehler '+r.status));err.status=r.status;throw err;}
+  return j;
+}
+function spLoad(key,fn){
+  if(spCache[key])return spCache[key];
+  spCache[key]={loading:true};
+  fn().then(function(v){spCache[key]={data:v};render();}).catch(function(e){spCache[key]={err:spMsg(e),status:e&&e.status};render();});
+  return spCache[key];
+}
+function spImg(imgs){var u=imgs&&imgs.length?(imgs[imgs.length>1?1:0]||imgs[0]).url:'';return u?'<div class="cov rc" style="background-image:url(\''+esc(u)+'\')"></div>':'<div class="cov tile fav rc">'+ic('note',1)+'</div>';}
+function spAccountHTML(){
+  if(!isNative())return '';
+  var h='<h3 style="margin:22px 0 4px">Mein Spotify</h3>';
+  if(!spOn()){
+    h+='<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('user',1)+'</div><span class="rt"><b>Spotify verbinden</b><small>Ganze Titel über die Spotify-App, gesteuert aus Fox Musik</small></span></div><button class="pill pri" data-act="spconnect">Verbinden</button></div>';
+    if(SP.cid)h+='<div class="row"><button class="rowmain" data-act="spresetid"><span class="rt"><small>Client-ID ändern</small></span></button></div>';
+    return h;
+  }
+  h+='<div id="spNow"></div>';
+  h+='<div class="row"><button class="rowmain" data-act="open" data-type="spapi" data-key="liked"><div class="cov tile fav">'+ic('heart',1)+'</div><span class="rt"><b>Lieblingssongs</b><small>Spotify</small></span></button></div>';
+  var c=spLoad('pls',async function(){var out=[],url='/me/playlists?limit=50';for(var i=0;i<4&&url;i++){var j=await spApi(url);out=out.concat((j&&j.items)||[]);url=j&&j.next?j.next.replace('https://api.spotify.com/v1',''):null;}return out;});
+  if(c.loading)h+='<p class="none">Lade deine Spotify-Playlists …</p>';
+  else if(c.err)h+='<p class="none">Spotify-Fehler: '+esc(c.err)+'</p>';
+  else (c.data||[]).filter(Boolean).forEach(function(p){
+    h+='<div class="row"><button class="rowmain" data-act="open" data-type="spapi" data-key="'+esc(p.id)+'">'+spImg(p.images)+'<span class="rt"><b>'+esc(p.name)+'</b><small>'+esc((p.owner&&p.owner.display_name)||'Spotify')+'</small></span></button></div>';
+  });
+  h+='<div class="bar"><button class="pill" data-act="sprefresh">'+ic('refresh')+'Neu laden</button><button class="pill" data-act="spdisconnect">Trennen</button></div>';
+  setTimeout(spNowStart,50);
+  return h;
+}
+function spPlaylistHTML(key){
+  var liked=key==='liked', pls=(spCache.pls&&spCache.pls.data)||[], meta=liked?{name:'Lieblingssongs',uri:null,images:null}:(pls.find(function(p){return p&&p.id===key;})||{name:'Spotify-Playlist',uri:'spotify:playlist:'+key});
+  var c=spLoad('pl:'+key,async function(){
+    var out=[],url=liked?'/me/tracks?limit=50':'/playlists/'+key+'/items?limit=100';
+    for(var i=0;i<(liked?4:3)&&url;i++){var j=await spApi(url);out=out.concat((j&&j.items)||[]);url=j&&j.next?j.next.replace('https://api.spotify.com/v1',''):null;}
+    return out.map(function(x){return x&&(x.item||x.track);}).filter(function(t){return t&&t.uri&&t.type!=='episode';});
+  });
+  var h='<div class="dhead">'+(meta.images?spImg(meta.images).replace('cov rc','cov dc'):'<div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic(liked?'heart':'list',1)+'</div>')+'<div class="dtxt"><h2>'+esc(meta.name)+'</h2><p>Spotify'+(c.data?' · '+c.data.length+' Titel':'')+'</p></div></div>';
+  h+='<div id="spNow"></div>';
+  var tracks=c.data||[];
+  h+='<div class="bar">'+((meta.uri||tracks.length)?'<button class="pill pri" data-act="spplayall" data-key="'+esc(key)+'">'+ic('play',1)+'Abspielen</button>':'')+'</div>';
+  if(c.loading)h+='<p class="none">Lade Titel …</p>';
+  else if(c.err)h+='<p class="none">'+(c.status===403||c.status===404?'Spotify zeigt die Titel nur bei eigenen oder gemeinsamen Playlists. Abspielen geht trotzdem.':'Spotify-Fehler: '+esc(c.err))+'</p>';
+  else tracks.forEach(function(t,i){
+    var art=(t.artists||[]).map(function(a){return a.name;}).join(', ');
+    h+='<div class="row"><button class="rowmain" data-act="spplay" data-key="'+esc(key)+'" data-i="'+i+'">'+spImg(t.album&&t.album.images)+'<span class="rt"><b>'+esc(t.name)+'</b><small>'+esc(art)+'</small></span></button></div>';
+  });
+  setTimeout(spNowStart,50);
+  return h;
+}
+function spSleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+async function spDevice(){
+  var d=await spApi('/me/player/devices'), ds=(d&&d.devices)||[];
+  return ds.find(function(x){return x.is_active;})||ds.find(function(x){return x.type==='Smartphone';})||ds[0]||null;
+}
+async function spPlay(body){
+  if(spBusy)return;spBusy=true;
+  try{
+    var dev=await spDevice();
+    if(!dev){
+      toast('Starte Spotify …');
+      var P=UPDP();if(P)P.openUrl({url:'spotify:home',fallback:'https://open.spotify.com/'}).catch(function(){});
+      for(var i=0;i<12&&!dev;i++){await spSleep(1500);dev=await spDevice().catch(function(){return null;});}
+      if(!dev){toast('Spotify ist nicht bereit. Öffne die Spotify-App, starte kurz einen Titel und tippe dann hier nochmal.');return;}
+    }
+    if(audio&&!audio.paused)audio.pause();
+    await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});
+    setTimeout(spNowTick,800);
+  }catch(e){
+    toast(e&&e.status===403?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify: '+spMsg(e));
+  }finally{spBusy=false;}
+}
+function spPlayFrom(key,i){
+  var c=spCache['pl:'+key], tracks=(c&&c.data)||[];
+  if(key!=='liked'){
+    var body={context_uri:'spotify:playlist:'+key};
+    if(i!=null&&tracks[i])body.offset={uri:tracks[i].uri};
+    spPlay(body);return;
+  }
+  var uris=tracks.map(function(t){return t.uri;});
+  if(!uris.length){toast('Keine Titel geladen.');return;}
+  var st=Math.max(0,i||0), win=uris.slice(st,st+100);
+  spPlay({uris:win});
+}
+async function spCtl(what){
+  try{
+    if(what==='toggle'){
+      var p=await spApi('/me/player');
+      if(p&&p.is_playing)await spApi('/me/player/pause',{method:'PUT'});
+      else{if(audio&&!audio.paused)audio.pause();await spApi('/me/player/play',{method:'PUT'});}
+    }else await spApi('/me/player/'+what,{method:'POST'});
+    setTimeout(spNowTick,600);
+  }catch(e){toast(e&&e.status===404?'Keine aktive Spotify-Wiedergabe. Tippe einen Titel an.':'Spotify: '+spMsg(e));}
+}
+function spInView(){return view.detail&&(view.detail.type==='spot'||view.detail.type==='spapi')&&spOn();}
+function spNowStart(){if(!spInView())return;spNowTick();if(!spNowT)spNowT=setInterval(function(){if(!spInView()){clearInterval(spNowT);spNowT=null;return;}if(document.visibilityState==='visible')spNowTick();},5000);}
+async function spNowTick(){
+  var el=$('#spNow');if(!el)return;
+  try{
+    var p=await spApi('/me/player/currently-playing');
+    el=$('#spNow');if(!el)return;
+    if(!p||!p.item){el.innerHTML='';return;}
+    var t=p.item, art=(t.artists||[]).map(function(a){return a.name;}).join(', ');
+    el.innerHTML='<div class="row" style="background:var(--accent-soft);border-radius:14px;padding:0 8px;margin:8px 0">'+
+      '<div class="rowmain">'+spImg(t.album&&t.album.images)+'<span class="rt"><b>'+esc(t.name)+'</b><small>'+esc(art)+' · Spotify</small></span></div>'+
+      '<button class="ib" data-act="spctl" data-w="previous" aria-label="Zurück">'+ic('prev',1)+'</button>'+
+      '<button class="ib" data-act="spctl" data-w="toggle" aria-label="'+(p.is_playing?'Pause':'Abspielen')+'">'+ic(p.is_playing?'pause':'play',1)+'</button>'+
+      '<button class="ib" data-act="spctl" data-w="next" aria-label="Weiter">'+ic('next',1)+'</button></div>';
+  }catch(e){}
+}
 function openInSpotify(type,id){
   var P=UPDP(), web='https://open.spotify.com/'+type+'/'+id;
   if(P)P.openUrl({url:'spotify:'+type+':'+id,fallback:web}).catch(function(){toast('Spotify lässt sich nicht öffnen.');});
@@ -1123,13 +1291,14 @@ function openInSpotify(type,id){
 }
 function spotRow(){
   var n=state.spl.length;
-  return '<div class="row"><button class="rowmain" data-act="open" data-type="spot" data-key="list"><div class="cov tile fav">'+ic('list',1)+'</div><span class="rt"><b>Spotify-Playlists</b><small>'+(n?n+' gespeichert':'Spotify-Link einfügen')+'</small></span></button></div>';
+  return '<div class="row"><button class="rowmain" data-act="open" data-type="spot" data-key="list"><div class="cov tile fav">'+ic('list',1)+'</div><span class="rt"><b>Spotify</b><small>'+(spOn()?'Konto verbunden':'Konto verbinden oder Links speichern')+(n?' · '+n+' Links':'')+'</small></span></button></div>';
 }
 function spotListHTML(){
   var n=state.spl.length;
   var h='<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic('list',1)+'</div><div class="dtxt"><h2>Spotify-Playlists</h2><p>'+(n?n+' gespeichert':'Noch leer')+'</p></div></div>';
+  h+=spAccountHTML();
+  h+='<h3 style="margin:22px 0 4px">Gespeicherte Links</h3>';
   h+='<div class="bar"><button class="pill pri" data-act="spadd">'+ic('plus')+'Link einfügen</button></div>';
-  h+=spLoginBar();
   if(!n)h+='<p class="none">Öffne in Spotify eine Playlist, ein Album oder einen Titel, tippe auf „Teilen“ und „Link kopieren“. Dann tippe hier auf „Link einfügen“. Die Wiedergabe läuft über den Spotify-Player.</p>';
   state.spl.forEach(function(p){
     h+='<div class="row"><button class="rowmain" data-act="open" data-type="spotpl" data-key="'+esc(p.id)+'"><div class="cov tile fav">'+ic(p.type==='track'?'note':'list',1)+'</div><span class="rt"><b>'+esc(p.name)+'</b><small>Spotify · '+spotLabel(p.type)+'</small></span></button>'+
@@ -1146,7 +1315,7 @@ function spotEmbedHTML(id){
   return '<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic(p.type==='track'?'note':'list',1)+'</div><div class="dtxt"><h2>'+esc(p.name)+'</h2><p>Spotify · '+spotLabel(p.type)+'</p></div></div>'+
     '<div class="bar"><button class="pill pri" data-act="spopen" data-t="'+p.type+'" data-id="'+esc(p.id)+'">In Spotify öffnen</button></div>'+
     '<div style="padding:0 4px"><iframe title="Spotify" src="'+src+'" style="width:100%;height:'+hgt+'px;border:0;border-radius:12px" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>'+
-    (spLogged?'<p class="none">Du bist bei Spotify angemeldet. Spielt der Player trotzdem nur Ausschnitte, tippe auf „In Spotify öffnen“.</p>':spLoginBar()+'<p class="none">Ohne Anmeldung spielt der Spotify-Player nur kurze Ausschnitte.</p>');
+    '<p class="none">Der eingebettete Player spielt nur 30-Sekunden-Ausschnitte. Ganze Titel: unter „Mein Spotify“ dein Konto verbinden oder „In Spotify öffnen“ tippen.</p>';
 }
 
 /* ---------- Sicherung: Favoriten, Playlists, Zähler, Einstellungen ---------- */
@@ -1378,6 +1547,13 @@ document.addEventListener('click',function(e){
     case 'wimport':importWish();break;
     case 'spadd':addSpot();break;
     case 'splogin':spLogin();break;
+    case 'spconnect':spConnect();break;
+    case 'spdisconnect':spDisconnect();break;
+    case 'spresetid':spResetId();break;
+    case 'sprefresh':spCache={};render();break;
+    case 'spplayall':spPlayFrom(el.dataset.key,null);break;
+    case 'spplay':spPlayFrom(el.dataset.key,parseInt(el.dataset.i,10));break;
+    case 'spctl':spCtl(el.dataset.w);break;
     case 'splogout':spLogout();break;
     case 'spopen':openInSpotify(el.dataset.t,el.dataset.id);break;
     case 'spdel':{var sid=el.dataset.id;if(window.confirm('Aus der Liste entfernen?')){state.spl=state.spl.filter(function(x){return x.id!==sid;});saveState();render();}break;}
