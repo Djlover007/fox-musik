@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -58,6 +58,13 @@ if (!xml.includes('PlaybackService')) {
     '    <service android:name="' + pkg + '.PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />\n    </application>'
   );
   console.log('Wiedergabe-Dienst eingetragen');
+}
+if (!xml.includes('SpotifyLoginActivity')) {
+  xml = xml.replace(
+    '</application>',
+    '    <activity android:name="' + pkg + '.SpotifyLoginActivity" android:exported="false" android:label="Spotify" />\n    </application>'
+  );
+  console.log('Spotify-Anmeldung eingetragen');
 }
 if (!xml.includes('foxupdate')) {
   xml = xml.replace(

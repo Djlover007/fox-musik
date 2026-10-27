@@ -15,6 +15,9 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.provider.Settings;
+import android.webkit.CookieManager;
+
+import androidx.activity.result.ActivityResult;
 
 import androidx.core.content.FileProvider;
 
@@ -22,6 +25,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
@@ -291,6 +295,41 @@ public class UpdatePlugin extends Plugin {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    // ---- Spotify-Anmeldung fuer den eingebetteten Player ----
+    @PluginMethod
+    public void spotifyLogin(PluginCall call) {
+        Intent i = new Intent(getContext(), SpotifyLoginActivity.class);
+        startActivityForResult(call, i, "spotifyLoginDone");
+    }
+
+    @ActivityCallback
+    private void spotifyLoginDone(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        JSObject o = new JSObject();
+        o.put("loggedIn", SpotifyLoginActivity.loggedIn());
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void spotifyStatus(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("loggedIn", SpotifyLoginActivity.loggedIn());
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void spotifyLogout(final PluginCall call) {
+        CookieManager.getInstance().removeAllCookies(new android.webkit.ValueCallback<Boolean>() {
+            @Override
+            public void onReceiveValue(Boolean ok) {
+                CookieManager.getInstance().flush();
+                call.resolve();
+            }
+        });
     }
 
     @PluginMethod

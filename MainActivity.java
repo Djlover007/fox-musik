@@ -4,11 +4,15 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
+import android.webkit.WebView;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 
 import java.util.ArrayList;
 
@@ -39,9 +43,35 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PlaybackPlugin.class);
         registerPlugin(UpdatePlugin.class);
         super.onCreate(savedInstanceState);
+        setupSpotifyWebView();
         String[] missing = missingPermissions();
         if (missing.length > 0) {
             ActivityCompat.requestPermissions(this, missing, 7421);
+        }
+    }
+
+    // Erlaubt dem eingebetteten Spotify-Player Anmelde-Cookies und geschuetzte Wiedergabe (ganze Titel).
+    private void setupSpotifyWebView() {
+        try {
+            WebView wv = getBridge().getWebView();
+            CookieManager cm = CookieManager.getInstance();
+            cm.setAcceptCookie(true);
+            cm.setAcceptThirdPartyCookies(wv, true);
+            wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
+            wv.setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+                @Override
+                public void onPermissionRequest(final PermissionRequest request) {
+                    for (String r : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(r)) {
+                            request.grant(new String[] { PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID });
+                            return;
+                        }
+                    }
+                    super.onPermissionRequest(request);
+                }
+            });
+        } catch (Exception e) {
+            // ignore
         }
     }
 

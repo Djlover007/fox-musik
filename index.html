@@ -1086,6 +1086,36 @@ async function addSpot(){
   saveState();render();
   toast('„'+name+'“ hinzugefügt.');
 }
+var spLogged=null;
+function spStatus(){
+  var P=UPDP();if(!P||!P.spotifyStatus)return;
+  P.spotifyStatus().then(function(r){
+    var v=!!(r&&r.loggedIn);
+    if(v!==spLogged){spLogged=v;if(view.detail&&(view.detail.type==='spot'||view.detail.type==='spotpl'))render();}
+  }).catch(function(){});
+}
+async function spLogin(){
+  var P=UPDP();if(!P){toast('Die Anmeldung geht nur in der Android-App.');return;}
+  try{
+    var r=await P.spotifyLogin();
+    spLogged=!!(r&&r.loggedIn);
+    toast(spLogged?'Bei Spotify angemeldet.':'Nicht angemeldet.');
+    render();
+  }catch(e){toast('Anmeldung nicht möglich: '+String((e&&e.message)||e).slice(0,120)+' (App neu bauen?)');}
+}
+async function spLogout(){
+  var P=UPDP();if(!P)return;
+  if(!window.confirm('Von Spotify abmelden?'))return;
+  try{await P.spotifyLogout();}catch(e){}
+  spLogged=false;toast('Von Spotify abgemeldet.');render();
+}
+function spLoginBar(){
+  if(!isNative())return '';
+  if(spLogged===null)spStatus();
+  return spLogged
+    ?'<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('heart',1)+'</div><span class="rt"><b>Bei Spotify angemeldet</b><small>Mit Premium spielt der Player ganze Titel</small></span></div><button class="pill" data-act="splogout">Abmelden</button></div>'
+    :'<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('list',1)+'</div><span class="rt"><b>Nicht angemeldet</b><small>Ohne Anmeldung nur 30-Sekunden-Ausschnitte</small></span></div><button class="pill pri" data-act="splogin">Anmelden</button></div>';
+}
 function openInSpotify(type,id){
   var P=UPDP(), web='https://open.spotify.com/'+type+'/'+id;
   if(P)P.openUrl({url:'spotify:'+type+':'+id,fallback:web}).catch(function(){toast('Spotify lässt sich nicht öffnen.');});
@@ -1099,6 +1129,7 @@ function spotListHTML(){
   var n=state.spl.length;
   var h='<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic('list',1)+'</div><div class="dtxt"><h2>Spotify-Playlists</h2><p>'+(n?n+' gespeichert':'Noch leer')+'</p></div></div>';
   h+='<div class="bar"><button class="pill pri" data-act="spadd">'+ic('plus')+'Link einfügen</button></div>';
+  h+=spLoginBar();
   if(!n)h+='<p class="none">Öffne in Spotify eine Playlist, ein Album oder einen Titel, tippe auf „Teilen“ und „Link kopieren“. Dann tippe hier auf „Link einfügen“. Die Wiedergabe läuft über den Spotify-Player.</p>';
   state.spl.forEach(function(p){
     h+='<div class="row"><button class="rowmain" data-act="open" data-type="spotpl" data-key="'+esc(p.id)+'"><div class="cov tile fav">'+ic(p.type==='track'?'note':'list',1)+'</div><span class="rt"><b>'+esc(p.name)+'</b><small>Spotify · '+spotLabel(p.type)+'</small></span></button>'+
@@ -1115,7 +1146,7 @@ function spotEmbedHTML(id){
   return '<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic(p.type==='track'?'note':'list',1)+'</div><div class="dtxt"><h2>'+esc(p.name)+'</h2><p>Spotify · '+spotLabel(p.type)+'</p></div></div>'+
     '<div class="bar"><button class="pill pri" data-act="spopen" data-t="'+p.type+'" data-id="'+esc(p.id)+'">In Spotify öffnen</button></div>'+
     '<div style="padding:0 4px"><iframe title="Spotify" src="'+src+'" style="width:100%;height:'+hgt+'px;border:0;border-radius:12px" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>'+
-    '<p class="none">Der Spotify-Player spielt ohne Anmeldung nur kurze Ausschnitte. Für ganze Titel tippe auf „In Spotify öffnen“.</p>';
+    (spLogged?'<p class="none">Du bist bei Spotify angemeldet. Spielt der Player trotzdem nur Ausschnitte, tippe auf „In Spotify öffnen“.</p>':spLoginBar()+'<p class="none">Ohne Anmeldung spielt der Spotify-Player nur kurze Ausschnitte.</p>');
 }
 
 /* ---------- Sicherung: Favoriten, Playlists, Zähler, Einstellungen ---------- */
@@ -1346,6 +1377,8 @@ document.addEventListener('click',function(e){
     case 'playall':if(listIds.length)startQueue(listIds,0);break;
     case 'wimport':importWish();break;
     case 'spadd':addSpot();break;
+    case 'splogin':spLogin();break;
+    case 'splogout':spLogout();break;
     case 'spopen':openInSpotify(el.dataset.t,el.dataset.id);break;
     case 'spdel':{var sid=el.dataset.id;if(window.confirm('Aus der Liste entfernen?')){state.spl=state.spl.filter(function(x){return x.id!==sid;});saveState();render();}break;}
     case 'wclear':if(window.confirm('Wunschliste wirklich leeren?')){state.wish=[];saveState();render();}break;
