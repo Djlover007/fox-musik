@@ -3,6 +3,8 @@ package de.foxmusik.app;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -57,6 +59,7 @@ public class UpdatePlugin extends Plugin {
                     c.setConnectTimeout(15000);
                     c.setReadTimeout(30000);
                     c.setInstanceFollowRedirects(true);
+                    c.setRequestProperty("User-Agent", "FoxMusik");
                     int code = c.getResponseCode();
                     if (code != 200) {
                         call.reject("HTTP " + code);
@@ -84,6 +87,14 @@ public class UpdatePlugin extends Plugin {
                     }
                     fo.close();
                     in.close();
+                    if (total > 0 && got != total) {
+                        call.reject("Download unvollstaendig (" + got + " von " + total + " Bytes)");
+                        return;
+                    }
+                    if (got < 100000) {
+                        call.reject("Download zu klein (" + got + " Bytes), das ist keine APK");
+                        return;
+                    }
                     JSObject r = new JSObject();
                     r.put("size", got);
                     call.resolve(r);
@@ -96,6 +107,39 @@ public class UpdatePlugin extends Plugin {
                 }
             }
         }).start();
+    }
+
+    private static long codeOf(PackageInfo p) {
+        return Build.VERSION.SDK_INT >= 28 ? p.getLongVersionCode() : p.versionCode;
+    }
+
+    // Prueft die heruntergeladene APK, bevor Android sie oeffnet, und liefert eine klare Fehlermeldung.
+    private String check(Context ctx, File f) {
+        try {
+            PackageManager pm = ctx.getPackageManager();
+            int flags = Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : 0;
+            PackageInfo ai = pm.getPackageArchiveInfo(f.getAbsolutePath(), flags);
+            if (ai == null) {
+                return "Android kann die Datei nicht lesen (" + f.length() + " Bytes). Sie ist defekt oder passt nicht zu diesem Handy.";
+            }
+            if (!ctx.getPackageName().equals(ai.packageName)) {
+                return "Falsche App in der Datei: " + ai.packageName;
+            }
+            PackageInfo cur = pm.getPackageInfo(ctx.getPackageName(), flags);
+            if (codeOf(ai) <= codeOf(cur)) {
+                return "Die Datei ist nicht neuer (Version " + codeOf(ai) + ", installiert " + codeOf(cur) + ").";
+            }
+            if (Build.VERSION.SDK_INT >= 28 && ai.signingInfo != null && cur.signingInfo != null) {
+                Signature[] a = ai.signingInfo.getApkContentsSigners();
+                Signature[] b = cur.signingInfo.getApkContentsSigners();
+                if (a != null && b != null && a.length > 0 && b.length > 0 && !a[0].equals(b[0])) {
+                    return "Die Signatur passt nicht zur installierten App. Deinstalliere Fox Musik einmal und installiere die neue Version.";
+                }
+            }
+        } catch (Exception e) {
+            // Pruefung nicht moeglich: Installation trotzdem versuchen
+        }
+        return null;
     }
 
     @PluginMethod
@@ -113,6 +157,11 @@ public class UpdatePlugin extends Plugin {
                 s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 ctx.startActivity(s);
                 call.reject("permission");
+                return;
+            }
+            String err = check(ctx, f);
+            if (err != null) {
+                call.reject(err);
                 return;
             }
             Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".foxupdate", f);

@@ -912,7 +912,7 @@ async function doUpdate(){
     var m=String((e&&e.message)||e);
     closeSheet();
     if(/permission/i.test(m))toast('Erlaube Fox Musik in den Einstellungen „Apps installieren“ und tippe danach nochmal auf App-Update.');
-    else toast('Update fehlgeschlagen: '+m.slice(0,120));
+    else toast('Update fehlgeschlagen: '+m.slice(0,220));
   }
 }
 function fmtSpeed(){return String(state.speed.toFixed(2)).replace(/0$/,'').replace('.',',')+'x';}
