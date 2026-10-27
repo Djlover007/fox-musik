@@ -320,7 +320,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},wish:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'tracks',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -700,6 +700,8 @@ function plSongs(p){return p.ids.map(byId).filter(Boolean);}
 function detailInfo(){
   var d=view.detail;if(!d)return null;
   if(d.type==='wish')return {name:'Spotify-Wunschliste',songs:[],sub:'',kind:'fav',icon:'listplus'};
+  if(d.type==='spot')return {name:'Spotify-Playlists',songs:[],sub:'',kind:'fav',icon:'list'};
+  if(d.type==='spotpl'){var sp=state.spl.find(function(x){return x.id===d.key;});return sp?{name:sp.name,songs:[],sub:'Spotify',kind:'fav',icon:'list'}:null;}
   if(d.type==='pl'){
     var sm=smartDef(d.key);
     if(sm)return {name:sm[1],songs:smartList(d.key),sub:sm[3],kind:'fav',icon:sm[2],empty:sm[4]};
@@ -748,6 +750,7 @@ function playlistsHTML(){
   var h='<div class="row"><button class="rowmain" data-act="newpl"><div class="cov tile add">'+ic('plus')+'</div><span class="rt"><b>Neue Playlist</b></span></button></div>';
   SMART.forEach(function(m){h+=plRow(m[0],m[1],smartList(m[0]),'fav',m[2]);});
   h+=wishRow();
+  h+=spotRow();
   state.playlists.forEach(function(p){h+=plRow(p.id,p.name,plSongs(p),'pl');});
   return h;
 }
@@ -768,6 +771,8 @@ function artistsHTML(){
 }
 function detailHTML(){
   if(view.detail&&view.detail.type==='wish')return wishHTML();
+  if(view.detail&&view.detail.type==='spot')return spotListHTML();
+  if(view.detail&&view.detail.type==='spotpl')return spotEmbedHTML(view.detail.key);
   var info=detailInfo();
   if(!info){view.detail=null;return '';}
   var fc=firstCover(info.songs), cov;
@@ -1049,6 +1054,70 @@ function wishHTML(){
   return h;
 }
 
+
+/* ---------- Spotify-Playlists (Link einfügen, Spotify-Player einbetten) ---------- */
+function parseSpot(u){
+  u=String(u||'').trim();
+  var m=u.match(/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(playlist|album|track)\/([A-Za-z0-9]{10,30})/)||u.match(/^spotify:(playlist|album|track):([A-Za-z0-9]{10,30})/);
+  return m?{type:m[1],id:m[2]}:null;
+}
+function spotLabel(t){return t==='playlist'?'Playlist':(t==='album'?'Album':'Titel');}
+async function spotName(type,id){
+  try{
+    var ctl=new AbortController(), t=setTimeout(function(){ctl.abort();},8000);
+    var r=await fetch('https://open.spotify.com/oembed?url='+encodeURIComponent('https://open.spotify.com/'+type+'/'+id),{signal:ctl.signal});
+    clearTimeout(t);
+    if(r.ok){var j=await r.json();if(j&&j.title)return String(j.title);}
+  }catch(e){}
+  return 'Spotify-'+spotLabel(type);
+}
+async function addSpot(){
+  var pre='';
+  try{pre=await navigator.clipboard.readText();}catch(e){}
+  if(!parseSpot(pre))pre='';
+  var v=window.prompt('Spotify-Link einfügen (in Spotify: Teilen, Link kopieren):',pre);
+  if(!v)return;
+  var p=parseSpot(v);
+  if(!p){toast('Das ist kein Spotify-Link für Playlist, Album oder Titel.');return;}
+  if(state.spl.some(function(x){return x.id===p.id;})){toast('Ist schon in der Liste.');return;}
+  toast('Lade Namen …');
+  var name=await spotName(p.type,p.id);
+  state.spl.push({id:p.id,type:p.type,name:name});
+  saveState();render();
+  toast('„'+name+'“ hinzugefügt.');
+}
+function openInSpotify(type,id){
+  var P=UPDP(), web='https://open.spotify.com/'+type+'/'+id;
+  if(P)P.openUrl({url:'spotify:'+type+':'+id,fallback:web}).catch(function(){toast('Spotify lässt sich nicht öffnen.');});
+  else window.open(web,'_blank');
+}
+function spotRow(){
+  var n=state.spl.length;
+  return '<div class="row"><button class="rowmain" data-act="open" data-type="spot" data-key="list"><div class="cov tile fav">'+ic('list',1)+'</div><span class="rt"><b>Spotify-Playlists</b><small>'+(n?n+' gespeichert':'Spotify-Link einfügen')+'</small></span></button></div>';
+}
+function spotListHTML(){
+  var n=state.spl.length;
+  var h='<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic('list',1)+'</div><div class="dtxt"><h2>Spotify-Playlists</h2><p>'+(n?n+' gespeichert':'Noch leer')+'</p></div></div>';
+  h+='<div class="bar"><button class="pill pri" data-act="spadd">'+ic('plus')+'Link einfügen</button></div>';
+  if(!n)h+='<p class="none">Öffne in Spotify eine Playlist, ein Album oder einen Titel, tippe auf „Teilen“ und „Link kopieren“. Dann tippe hier auf „Link einfügen“. Die Wiedergabe läuft über den Spotify-Player.</p>';
+  state.spl.forEach(function(p){
+    h+='<div class="row"><button class="rowmain" data-act="open" data-type="spotpl" data-key="'+esc(p.id)+'"><div class="cov tile fav">'+ic(p.type==='track'?'note':'list',1)+'</div><span class="rt"><b>'+esc(p.name)+'</b><small>Spotify · '+spotLabel(p.type)+'</small></span></button>'+
+      '<button class="ib" data-act="spdel" data-id="'+esc(p.id)+'" aria-label="Entfernen">'+ic('trash')+'</button></div>';
+  });
+  return h;
+}
+function spotEmbedHTML(id){
+  var p=state.spl.find(function(x){return x.id===id;});
+  if(!p){view.detail=null;return '';}
+  if(audio&&!audio.paused)audio.pause();
+  var src='https://open.spotify.com/embed/'+p.type+'/'+p.id+'?utm_source=generator'+(isDark()?'&theme=0':'');
+  var hgt=p.type==='track'?152:420;
+  return '<div class="dhead"><div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic(p.type==='track'?'note':'list',1)+'</div><div class="dtxt"><h2>'+esc(p.name)+'</h2><p>Spotify · '+spotLabel(p.type)+'</p></div></div>'+
+    '<div class="bar"><button class="pill pri" data-act="spopen" data-t="'+p.type+'" data-id="'+esc(p.id)+'">In Spotify öffnen</button></div>'+
+    '<div style="padding:0 4px"><iframe title="Spotify" src="'+src+'" style="width:100%;height:'+hgt+'px;border:0;border-radius:12px" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>'+
+    '<p class="none">Der Spotify-Player spielt ohne Anmeldung nur kurze Ausschnitte. Für ganze Titel tippe auf „In Spotify öffnen“.</p>';
+}
+
 /* ---------- Sicherung: Favoriten, Playlists, Zähler, Einstellungen ---------- */
 function nk(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
 async function exportBackup(){
@@ -1057,7 +1126,7 @@ async function exportBackup(){
   state.favs.forEach(note);
   state.playlists.forEach(function(p){(p.ids||[]).forEach(note);});
   Object.keys(state.stats||{}).forEach(note);
-  var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},
+  var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
     settings:{speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
   var text=JSON.stringify(data), name='fox-musik-sicherung-'+new Date().toISOString().slice(0,10)+'.json';
   var P=UPDP();
@@ -1117,6 +1186,7 @@ async function applyBackup(text){
     var o=state.stats[m]||(state.stats[m]={n:0,last:0});
     o.n=Math.max(o.n||0,st[id].n||0);o.last=Math.max(o.last||0,st[id].last||0);
   });
+  (d.spl||[]).forEach(function(p){if(p&&p.id&&!state.spl.some(function(x){return x.id===p.id;}))state.spl.push(p);});
   var se=d.settings||{};
   if(se.speed)state.speed=se.speed;
   if(typeof se.fade==='number')state.fade=se.fade;
@@ -1275,6 +1345,9 @@ document.addEventListener('click',function(e){
     case 'play':startQueue(listIds,parseInt(el.dataset.i,10));break;
     case 'playall':if(listIds.length)startQueue(listIds,0);break;
     case 'wimport':importWish();break;
+    case 'spadd':addSpot();break;
+    case 'spopen':openInSpotify(el.dataset.t,el.dataset.id);break;
+    case 'spdel':{var sid=el.dataset.id;if(window.confirm('Aus der Liste entfernen?')){state.spl=state.spl.filter(function(x){return x.id!==sid;});saveState();render();}break;}
     case 'wclear':if(window.confirm('Wunschliste wirklich leeren?')){state.wish=[];saveState();render();}break;
     case 'wspot':{var ww=state.wish[parseInt(el.dataset.w,10)];if(ww)spotSearch((ww.a?ww.a+' ':'')+ww.t);break;}
     case 'shuffleall':
@@ -1484,7 +1557,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
