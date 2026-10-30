@@ -14,7 +14,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.os.SystemClock;
 import android.provider.Settings;
+import android.view.KeyEvent;
 import android.webkit.CookieManager;
 
 import androidx.activity.result.ActivityResult;
@@ -271,6 +273,37 @@ public class UpdatePlugin extends Plugin {
     }
 
     // Oeffnet die Spotify-App (oder open.spotify.com) fuer eine Suche.
+    // "Drueckt" die Play-Taste von Spotify (wie eine Kopfhoerer-Taste), damit Spotify als Geraet aktiv wird.
+    @PluginMethod
+    public void spotifyWake(PluginCall call) {
+        Context ctx = getContext();
+        boolean installed;
+        try {
+            ctx.getPackageManager().getPackageInfo("com.spotify.music", 0);
+            installed = true;
+        } catch (Exception e) {
+            installed = false;
+        }
+        if (installed) {
+            String cmd = call.getString("key", "play");
+            int code = "pause".equals(cmd) ? KeyEvent.KEYCODE_MEDIA_PAUSE : KeyEvent.KEYCODE_MEDIA_PLAY;
+            long t = SystemClock.uptimeMillis();
+            for (int action : new int[] { KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP }) {
+                Intent i = new Intent(Intent.ACTION_MEDIA_BUTTON);
+                i.setPackage("com.spotify.music");
+                i.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(t, t, action, code, 0));
+                try {
+                    ctx.sendOrderedBroadcast(i, null);
+                } catch (Exception e) {
+                    // ignore
+                }
+            }
+        }
+        JSObject o = new JSObject();
+        o.put("installed", installed);
+        call.resolve(o);
+    }
+
     @PluginMethod
     public void openUrl(PluginCall call) {
         Context ctx = getContext();

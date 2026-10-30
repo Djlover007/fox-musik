@@ -1260,6 +1260,19 @@ function spShowErr(){
   openSheet('<div class="sform"><h3>Spotify spielt nicht</h3><p style="color:var(--fg)">'+esc(e.t)+'</p>'+(e.m?'<p>Technisch: '+esc(e.m)+'</p>':'')+'<button class="btn" data-sa="cancel">OK</button></div>');
 }
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&spErr)setTimeout(spShowErr,400);});
+async function spWake(){
+  var P=UPDP();if(!P||!P.spotifyWake)return false;
+  try{var r=await P.spotifyWake({key:'play'});return !!(r&&r.installed);}catch(e){return false;}
+}
+async function spWaitActive(ms){
+  var end=Date.now()+ms;
+  while(Date.now()<end){
+    await spSleep(700);
+    var ds=await spDevices().catch(function(){return [];}), a=ds.find(function(x){return x.is_active;});
+    if(a)return a;
+  }
+  return null;
+}
 async function spTryPlay(dev,body){
   try{
     await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});
@@ -1288,11 +1301,18 @@ async function spPlay(bodies){
       var P=UPDP(), target=body.context_uri||(body.uris&&body.uris[0])||'spotify:home';
       if(P)P.openUrl({url:target,fallback:'https://open.spotify.com/'}).catch(function(){});
       opened=true;
-      for(var i=0;i<25&&!dev;i++){await spSleep(1200);dev=await spDevice().catch(function(){return null;});}
+      for(var i=0;i<25&&!dev;i++){await spSleep(1200);if(i===2||i===7||i===14)await spWake();dev=await spDevice().catch(function(){return null;});}
       if(!dev){spFail('Die Spotify-App hat sich nicht als Abspielgerät gemeldet. Tippe in Spotify einmal kurz auf Play und dann hier nochmal auf den Titel.','keine Geräte in /me/player/devices');return;}
       await spSleep(800);
     }
+    if(!dev.is_active){
+      toast('Wecke Spotify …',true);
+      if(await spWake()){var act=await spWaitActive(6000);if(act)dev=act;}
+    }
     var err=await spTryPlay(dev,body);
+    if(err&&(err.status>=500||err.status===404)){
+      if(await spWake()){var act2=await spWaitActive(6000);if(act2)dev=act2;await spSleep(400);err=await spTryPlay(dev,body);}
+    }
     for(var k=1;err&&err.status!==403&&k<bodies.length;k++){await spSleep(600);err=await spTryPlay(dev,bodies[k]);}
     if(err&&!opened){
       var ds=await spDevices().catch(function(){return [];}), other=ds.find(function(x){return x.id!==dev.id&&x.type==='Smartphone';});
