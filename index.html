@@ -1815,6 +1815,10 @@ async function spWaitActive(ms){
   return null;
 }
 async function spTryPlay(dev,body){
+  for(var nt=0;nt<2;nt++){
+    try{await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});return null;}
+    catch(e0){if(e0&&e0.status)break;await spSleep(1200);}
+  }
   try{
     await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});
     return null;
@@ -1860,10 +1864,18 @@ async function spPlay(bodies){
       if(other)err=await spTryPlay(other,body);
     }
     if(err){
+      // Fehlalarm vermeiden: spielt Spotify inzwischen doch?
+      for(var chk=0;chk<3&&err;chk++){
+        try{var pl=await spApi('/me/player');if(pl&&pl.is_playing){err=null;break;}}catch(e3){}
+        await spSleep(1000);
+      }
+    }
+    if(err){
       var m=spMsg(err);
       if(err.status===403)spFail(/premium/i.test(m)?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify hat das Abspielen abgelehnt. Ist dein Konto Premium und in deiner Spotify-Entwickler-App freigeschaltet?',m);
       else if(err.status===404)spFail('Spotify findet kein aktives Gerät. Öffne Spotify, tippe kurz auf Play und versuche es dann nochmal.',m);
       else if(err.status>=500)spFail('Spotify hatte einen internen Fehler. Öffne die Spotify-App, tippe dort kurz auf Play und dann hier nochmal auf den Titel. Das „weckt“ Spotify meist auf.',m+' ('+err.status+')');
+      else if(!err.status)spFail('Die Verbindung zu Spotify ist kurz abgebrochen. Tippe den Titel bitte nochmal an.',m);
       else spFail('Spotify konnte nicht starten.',m+' ('+err.status+')');
       return;
     }
@@ -1871,7 +1883,12 @@ async function spPlay(bodies){
     toast('Spielt in Spotify.');
     setTimeout(spNowTick,1200);
   }catch(e){
-    spFail(e&&e.status===403?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify konnte nicht starten.',spMsg(e));
+    if(!(e&&e.status)){
+      await spSleep(1500);
+      try{var pl2=await spApi('/me/player');if(pl2&&pl2.is_playing){toast('Spielt in Spotify.');setTimeout(spNowTick,800);return;}}catch(e4){}
+      spFail('Die Verbindung zu Spotify ist kurz abgebrochen. Tippe den Titel bitte nochmal an.',spMsg(e));
+    }
+    else spFail(e.status===403?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify konnte nicht starten.',spMsg(e)+' ('+e.status+')');
   }finally{spBusy=false;}
 }
 function spPlayFrom(key,i){
