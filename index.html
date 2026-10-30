@@ -1134,14 +1134,31 @@ async function spToken(params){
   if(!r.ok||!j.access_token)throw new Error(j.error_description||j.error||('Token '+r.status));
   SP.tok=j.access_token;SP.exp=Date.now()+((j.expires_in||3600)-60)*1000;if(j.refresh_token)SP.ref=j.refresh_token;spSave();
 }
+function spSetupSheet(){
+  var st='<li style="margin:0 0 10px">';
+  openSheet('<div class="sform"><h3>Eigenes Spotify-Konto einrichten</h3>'+
+    '<p>Einmalig, dauert ca. 5 Minuten. Jeder nutzt so sein eigenes Konto (Spotify Premium nötig).</p>'+
+    '<ol style="margin:4px 0 0;padding-left:20px;color:var(--fg);line-height:1.45">'+
+    st+'Öffne das Spotify-Dashboard und melde dich mit <b>deinem</b> Spotify-Konto an. Beim ersten Mal die Bedingungen akzeptieren und die E-Mail bestätigen.</li>'+
+    st+'Tippe auf <b>Create app</b> (oben rechts, am Handy evtl. „Desktop-Website“ im Browser-Menü einschalten).</li>'+
+    st+'Name und Beschreibung: beliebig, z. B. „Fox Musik“.</li>'+
+    st+'Bei <b>Redirect URIs</b> genau das eintragen und auf „Add“ tippen:<br><code style="user-select:all;font-weight:700">'+SP_REDIR+'</code></li>'+
+    st+'Bei den APIs <b>Web API</b> anhaken, Bedingungen akzeptieren, <b>Save</b>.</li>'+
+    st+'Öffne die App, dann <b>Settings</b>. Kopiere die <b>Client ID</b> (32 Zeichen) und füge sie unten ein.</li>'+
+    '</ol>'+
+    '<button class="btn ghost" data-sa="spdash">Spotify-Dashboard öffnen</button>'+
+    '<button class="btn ghost" data-sa="spcopyredir">Redirect-URI kopieren</button>'+
+    '<input id="spcid" placeholder="Client ID einfügen" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Client ID">'+
+    '<button class="btn" data-sa="spcidsave">Speichern und verbinden</button></div>');
+}
+function spCidSave(){
+  var el=$('#spcid'), v=((el&&el.value)||'').replace(/\s+/g,'');
+  if(!/^[0-9a-f]{32}$/i.test(v)){toast('Das ist keine Client-ID. Sie hat 32 Zeichen (Ziffern und a bis f).');return;}
+  SP={cid:v.toLowerCase(),tok:null,exp:0,ref:null};spSave();closeSheet();spConnect();
+}
 async function spConnect(){
   var P=UPDP();if(!P||!P.spotifyAuth){toast('Das geht nur in der Android-App (neu bauen?).');return;}
-  if(!SP.cid){
-    var v=window.prompt('Client-ID deiner Spotify-App eingeben (developer.spotify.com, Dashboard, deine App, Settings):','');
-    v=(v||'').trim();
-    if(!/^[0-9a-f]{32}$/i.test(v)){toast('Das sieht nicht wie eine Client-ID aus (32 Zeichen, Ziffern und a bis f).');return;}
-    SP.cid=v;spSave();
-  }
+  if(!SP.cid){spSetupSheet();return;}
   try{
     var ver=spRand(64), st=spRand(12);
     var ch=b64url(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ver)));
@@ -1160,11 +1177,15 @@ async function spConnect(){
 }
 function spDisconnect(){
   if(!window.confirm('Spotify-Konto trennen?'))return;
-  SP.tok=null;SP.ref=null;SP.exp=0;spSave();spCache={};render();toast('Spotify getrennt.');
+  SP.tok=null;SP.ref=null;SP.exp=0;spSave();spCache={};
+  var Pl=UPDP();if(Pl&&Pl.spotifyLogout)Pl.spotifyLogout().catch(function(){});
+  render();toast('Spotify getrennt.');
 }
 function spResetId(){
-  if(!window.confirm('Client-ID löschen und Spotify trennen?'))return;
-  SP={cid:'',tok:null,exp:0,ref:null};spSave();spCache={};render();
+  if(SP.ref&&!window.confirm('Spotify trennen und Client-ID ändern?'))return;
+  SP={cid:'',tok:null,exp:0,ref:null};spSave();spCache={};
+  var Pl=UPDP();if(Pl&&Pl.spotifyLogout)Pl.spotifyLogout().catch(function(){});
+  render();spSetupSheet();
 }
 async function spApi(path,opt,retry){
   if(!SP.ref)throw new Error('nicht verbunden');
@@ -1188,8 +1209,8 @@ function spAccountHTML(){
   if(!isNative())return '';
   var h='<h3 style="margin:22px 0 4px">Mein Spotify</h3>';
   if(!spOn()){
-    h+='<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('user',1)+'</div><span class="rt"><b>Spotify verbinden</b><small>Ganze Titel über die Spotify-App, gesteuert aus Fox Musik</small></span></div><button class="pill pri" data-act="spconnect">Verbinden</button></div>';
-    if(SP.cid)h+='<div class="row"><button class="rowmain" data-act="spresetid"><span class="rt"><small>Client-ID ändern</small></span></button></div>';
+    h+='<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('user',1)+'</div><span class="rt"><b>Spotify verbinden</b><small>'+(SP.cid?'Mit deinem Konto anmelden':'Eigenes Konto einrichten (Premium)')+'</small></span></div><button class="pill pri" data-act="spconnect">Verbinden</button></div>';
+    if(SP.cid)h+='<div class="row"><button class="rowmain" data-act="spresetid"><span class="rt"><small>Anderes Konto / Client-ID ändern</small></span></button></div>';
     return h;
   }
   h+='<div id="spNow"></div>';
@@ -1512,6 +1533,9 @@ function handleSheet(act,el){
     case 'delyes':deleteSong(sctx.id);break;
     case 'newpl':newPlSheet();break;
     case 'create':createPlaylist();break;
+    case 'spcidsave':spCidSave();break;
+    case 'spdash':{var Pd=UPDP();if(Pd)Pd.openUrl({url:'https://developer.spotify.com/dashboard'}).catch(function(){toast('Öffne developer.spotify.com/dashboard im Browser.');});else window.open('https://developer.spotify.com/dashboard','_blank');break;}
+    case 'spcopyredir':try{navigator.clipboard.writeText(SP_REDIR).then(function(){toast('Kopiert: '+SP_REDIR);},function(){toast('Bitte abtippen: '+SP_REDIR);});}catch(e){toast('Bitte abtippen: '+SP_REDIR);}break;
     case 'pick':{
       var pl=state.playlists.find(function(x){return x.id===el.dataset.pl;});
       if(pl){if(pl.ids.indexOf(sctx.id)>-1)toast('Der Titel ist schon in „'+pl.name+'“.');else{pl.ids.push(sctx.id);saveState();toast('Zu „'+pl.name+'“ hinzugefügt');}}

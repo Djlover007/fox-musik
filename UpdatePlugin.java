@@ -284,7 +284,7 @@ public class UpdatePlugin extends Plugin {
     }
 
     private boolean tryOpen(Context ctx, String url) {
-        if (url == null || !(url.startsWith("spotify:") || url.startsWith("https://open.spotify.com/"))) {
+        if (url == null || !(url.startsWith("spotify:") || url.startsWith("https://open.spotify.com/") || url.startsWith("https://developer.spotify.com/"))) {
             return false;
         }
         try {
