@@ -273,6 +273,21 @@ body{padding-bottom:0}
 .dhead .dc svg{width:40%;height:40%}
 .dtxt h2{font-size:26px;letter-spacing:-.02em}
 /* Startseite */
+.spn{position:relative;overflow:hidden;isolation:isolate;margin:4px 0 16px;padding:14px 14px 8px;border-radius:12px;background:var(--surface2)}
+.spn-bg{position:absolute;inset:-30px;z-index:-1;background-size:cover;background-position:center;filter:blur(36px) saturate(1.4) brightness(.55);opacity:.9}
+.spn-top{display:flex;align-items:center;gap:12px}
+.spn-cov{width:64px;height:64px;border-radius:6px;box-shadow:0 8px 18px rgba(0,0,0,.4)}
+.spn .rt b{font-size:17px;color:#fff}
+.spn .rt small{color:rgba(255,255,255,.75)}
+.spn .spn-lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.7);font-weight:700}
+.spn-prog{height:3px;border-radius:2px;background:rgba(255,255,255,.25);margin:14px 0 4px}
+.spn-prog i{display:block;height:100%;border-radius:2px;background:#fff}
+.spn-times{display:flex;justify-content:space-between;font-size:11.5px;color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums}
+.spn-ctl{display:flex;justify-content:center;align-items:center;gap:22px;color:#fff}
+.spn-ctl .ib{color:#fff}
+.spn-ctl .ib:hover{background:rgba(255,255,255,.12)}
+.spn-ctl .spn-pp{width:50px;height:50px;background:#fff;color:#111}
+.spn-ctl .spn-pp:hover{background:#fff}
 .hello{margin:6px 0 12px;font:700 24px/1.2 var(--font-display);letter-spacing:-.02em}
 .qgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .qt{display:flex;align-items:center;gap:10px;min-width:0;height:56px;padding:0 10px 0 0;border:0;border-radius:6px;background:var(--surface2);color:var(--fg);text-align:left;overflow:hidden;font-weight:700;font-size:13.5px;line-height:1.2}
@@ -1275,7 +1290,7 @@ function renderNav(){
 }
 function greet(){var hr=new Date().getHours();return hr<5?'Gute Nacht':hr<11?'Guten Morgen':hr<18?'Guten Tag':'Guten Abend';}
 function qTile(act,attrs,cov,label){return '<button class="qt" data-act="'+act+'"'+attrs+'>'+cov+'<span>'+esc(label)+'</span></button>';}
-function qIcon(icon,a1,a2){return '<div class="qi" style="--a1:'+a1+';--a2:'+a2+'">'+ic(icon,1)+'</div>';}
+function qIcon(icon,a1,a2){return '<div class="qi" style="--a1:'+a1+';--a2:'+a2+'">'+ic(icon,icon==='heart'||icon==='star')+'</div>';}
 function nwHomeHTML(){
   if(!isNative())return '';
   if(nwSession===null)nwStatus();
@@ -1291,6 +1306,7 @@ function nwHomeHTML(){
 }
 function homeHTML(){
   var h='<p class="hello">'+greet()+'</p>';
+  if(isNative()&&spOn()){h+='<div id="spNow">'+spLast+'</div>';setTimeout(spNowStart,30);}
   h+='<div class="qgrid">'+
     qTile('open',' data-type="pl" data-key="fav"',qIcon('heart','#ff7a1a','#b8360c'),'Bevorzugte Titel')+
     qTile('open',' data-type="pl" data-key="top"',qIcon('chart','#e2a400','#a3530a'),'Meistgespielt')+
@@ -1644,7 +1660,7 @@ function spLoginBar(){
     :'<div class="row"><div class="rowmain"><div class="cov tile fav">'+ic('list',1)+'</div><span class="rt"><b>Nicht angemeldet</b><small>Ohne Anmeldung nur 30-Sekunden-Ausschnitte</small></span></div><button class="pill pri" data-act="splogin">Anmelden</button></div>';
 }
 /* ---------- Spotify-Konto: eigene Playlists + Steuerung der Spotify-App (Premium) ---------- */
-var SP={cid:'',tok:null,exp:0,ref:null}, SP_REDIR='foxmusik://callback', spCache={}, spNowT=null, spBusy=false;
+var spLast='', spLastT=0, SP={cid:'',tok:null,exp:0,ref:null}, SP_REDIR='foxmusik://callback', spCache={}, spNowT=null, spBusy=false;
 var SP_SCOPES='playlist-read-private playlist-read-collaborative user-library-read user-read-playback-state user-modify-playback-state user-read-currently-playing';
 (function(){try{var o=JSON.parse(localStorage.getItem('fox-sp')||'{}');SP.cid=o.cid||'';SP.tok=o.tok||null;SP.exp=o.exp||0;SP.ref=o.ref||null;}catch(e){}})();
 function spSave(){try{localStorage.setItem('fox-sp',JSON.stringify(SP));}catch(e){}}
@@ -1738,7 +1754,7 @@ function spAccountHTML(){
     if(SP.cid)h+='<div class="row"><button class="rowmain" data-act="spresetid"><span class="rt"><small>Anderes Konto / Client-ID ändern</small></span></button></div>';
     return h;
   }
-  h+='<div id="spNow"></div>';
+  h+='<div id="spNow">'+spLast+'</div>';
   h+='<div class="row"><button class="rowmain" data-act="open" data-type="spapi" data-key="liked"><div class="cov tile fav">'+ic('heart',1)+'</div><span class="rt"><b>Lieblingssongs</b><small>Spotify</small></span></button></div>';
   var c=spLoad('pls',async function(){var out=[],url='/me/playlists?limit=50';for(var i=0;i<4&&url;i++){var j=await spApi(url);out=out.concat((j&&j.items)||[]);url=j&&j.next?j.next.replace('https://api.spotify.com/v1',''):null;}return out;});
   if(c.loading)h+='<p class="none">Lade deine Spotify-Playlists …</p>';
@@ -1758,7 +1774,7 @@ function spPlaylistHTML(key){
     return out.map(function(x,pos){var t=x&&(x.item||x.track);if(t){t._pos=pos;t._uri=(t.linked_from&&t.linked_from.uri)||t.uri;}return t;}).filter(function(t){return t&&t.uri&&t.type!=='episode'&&!t.is_local;});
   });
   var h='<div class="dhead">'+(meta.images?spImg(meta.images).replace('cov rc','cov dc'):'<div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic(liked?'heart':'list',1)+'</div>')+'<div class="dtxt"><h2>'+esc(meta.name)+'</h2><p>Spotify'+(c.data?' · '+c.data.length+' Titel':'')+'</p></div></div>';
-  h+='<div id="spNow"></div>';
+  h+='<div id="spNow">'+spLast+'</div>';
   var tracks=c.data||[];
   h+='<div class="bar">'+((meta.uri||tracks.length)?'<button class="pill pri" data-act="spplayall" data-key="'+esc(key)+'">'+ic('play',1)+'Abspielen</button>':'')+'</div>';
   if(c.loading)h+='<p class="none">Lade Titel …</p>';
@@ -1884,20 +1900,26 @@ async function spCtl(what){
     setTimeout(spNowTick,600);
   }catch(e){toast(e&&e.status===404?'Keine aktive Spotify-Wiedergabe. Tippe einen Titel an.':'Spotify: '+spMsg(e));}
 }
-function spInView(){return view.detail&&(view.detail.type==='spot'||view.detail.type==='spapi')&&spOn();}
-function spNowStart(){if(!spInView())return;spNowTick();if(!spNowT)spNowT=setInterval(function(){if(!spInView()){clearInterval(spNowT);spNowT=null;return;}if(document.visibilityState==='visible')spNowTick();},5000);}
+function spInView(){return spOn()&&((view.detail&&(view.detail.type==='spot'||view.detail.type==='spapi'))||(!view.detail&&view.tab==='home'));}
+function spNowStart(){if(!spInView())return;if(Date.now()-spLastT>1500)spNowTick();if(!spNowT)spNowT=setInterval(function(){if(!spInView()){clearInterval(spNowT);spNowT=null;return;}if(document.visibilityState==='visible')spNowTick();},4000);}
 async function spNowTick(){
-  var el=$('#spNow');if(!el)return;
+  var el=$('#spNow');if(!el)return;spLastT=Date.now();
   try{
     var p=await spApi('/me/player/currently-playing');
     el=$('#spNow');if(!el)return;
-    if(!p||!p.item){el.innerHTML='';return;}
+    if(!p||!p.item){spLast='';el.innerHTML='';return;}
     var t=p.item, art=(t.artists||[]).map(function(a){return a.name;}).join(', ');
-    el.innerHTML='<div class="row" style="background:var(--accent-soft);border-radius:14px;padding:0 8px;margin:8px 0">'+
-      '<div class="rowmain">'+spImg(t.album&&t.album.images)+'<span class="rt"><b>'+esc(t.name)+'</b><small>'+esc(art)+' · Spotify</small></span></div>'+
-      '<button class="ib" data-act="spctl" data-w="previous" aria-label="Zurück">'+ic('prev',1)+'</button>'+
-      '<button class="ib" data-act="spctl" data-w="toggle" aria-label="'+(p.is_playing?'Pause':'Abspielen')+'">'+ic(p.is_playing?'pause':'play',1)+'</button>'+
-      '<button class="ib" data-act="spctl" data-w="next" aria-label="Weiter">'+ic('next',1)+'</button></div>';
+    var imgs=(t.album&&t.album.images)||[], big=imgs[0]?imgs[0].url:'', pct=t.duration_ms?Math.min(100,(p.progress_ms||0)/t.duration_ms*100):0;
+    el.innerHTML='<div class="spn">'+
+      (big?'<div class="spn-bg" style="background-image:url(\''+esc(big)+'\')"></div>':'')+
+      '<div class="spn-top">'+(big?'<div class="cov spn-cov" style="background-image:url(\''+esc(big)+'\')"></div>':'<div class="cov spn-cov tile fav">'+ic('note',1)+'</div>')+
+      '<div class="rt"><small class="spn-lbl">'+(p.is_playing?'Läuft gerade in Spotify':'Pausiert in Spotify')+'</small><b>'+esc(t.name)+'</b><small>'+esc(art)+'</small></div></div>'+
+      '<div class="spn-prog"><i style="width:'+pct.toFixed(1)+'%"></i></div>'+
+      '<div class="spn-times"><span>'+fmt((p.progress_ms||0)/1000)+'</span><span>'+fmt((t.duration_ms||0)/1000)+'</span></div>'+
+      '<div class="spn-ctl"><button class="ib" data-act="spctl" data-w="previous" aria-label="Zurück">'+ic('prev',1)+'</button>'+
+      '<button class="ib spn-pp" data-act="spctl" data-w="toggle" aria-label="'+(p.is_playing?'Pause':'Abspielen')+'">'+ic(p.is_playing?'pause':'play',1)+'</button>'+
+      '<button class="ib" data-act="spctl" data-w="next" aria-label="Weiter">'+ic('next',1)+'</button></div></div>';
+    spLast=el.innerHTML;
   }catch(e){}
 }
 function openInSpotify(type,id){
