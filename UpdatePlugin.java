@@ -374,8 +374,8 @@ public class UpdatePlugin extends Plugin {
     @PluginMethod
     public void openNeowake(PluginCall call) {
         Intent i = new Intent(getContext(), NeowakeActivity.class);
-        i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-        getActivity().startActivity(i);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
         call.resolve();
     }
 

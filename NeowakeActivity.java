@@ -3,6 +3,10 @@ package de.foxmusik.app;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.TextView;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.ViewGroup;
@@ -112,6 +116,28 @@ public class NeowakeActivity extends Activity {
         root.setBackgroundColor(Color.WHITE);
         web = new WebView(this);
         root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // Fester Knopf zurueck zu Fox Musik
+        TextView back = new TextView(this);
+        back.setText("\u2039  Fox Musik");
+        back.setTextColor(Color.WHITE);
+        back.setTextSize(15);
+        back.setTypeface(back.getTypeface(), android.graphics.Typeface.BOLD);
+        float dp = getResources().getDisplayMetrics().density;
+        back.setPadding((int) (14 * dp), (int) (9 * dp), (int) (16 * dp), (int) (9 * dp));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xE62C66F5);
+        bg.setCornerRadius(22 * dp);
+        back.setBackground(bg);
+        back.setElevation(6 * dp);
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toFox();
+            }
+        });
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        lp.setMargins(0, (int) (8 * dp), (int) (10 * dp), 0);
+        root.addView(back, lp);
         setContentView(root);
 
         CookieManager cm = CookieManager.getInstance();
@@ -185,16 +211,19 @@ public class NeowakeActivity extends Activity {
         CookieManager.getInstance().flush();
     }
 
-    @Override
-    public void onBackPressed() {
-        if (web != null && web.canGoBack()) {
-            web.goBack();
-        } else {
-            // Neowake im Hintergrund weiterlaufen lassen (Audio spielt weiter) und Fox Musik nach vorne holen.
+    // Neowake laeuft als eigenes Fenster weiter (Audio spielt weiter), Fox Musik kommt nach vorne.
+    private void toFox() {
+        CookieManager.getInstance().flush();
+        if (!moveTaskToBack(true)) {
             Intent i = new Intent(this, MainActivity.class);
-            i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(i);
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        toFox();
     }
 
     @Override

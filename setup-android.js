@@ -66,7 +66,7 @@ if (!xml.includes('com.spotify.music')) {
 if (!xml.includes('NeowakeActivity')) {
   xml = xml.replace(
     '</application>',
-    '    <activity android:name="' + pkg + '.NeowakeActivity" android:exported="false" android:label="Neowake" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />\n    </application>'
+    '    <activity android:name="' + pkg + '.NeowakeActivity" android:exported="false" android:label="Neowake" android:launchMode="singleTask" android:taskAffinity="' + pkg + '.neowake" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />\n    </application>'
   );
   console.log('Neowake-Sparte eingetragen');
 }
