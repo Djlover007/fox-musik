@@ -64,6 +64,13 @@ svg.i.f{fill:currentColor;stroke:none}
 .nw-logo svg{width:32px;height:32px}
 .nw-ok{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
 .nw-ok svg{width:16px;height:16px;color:#ffb3d1}
+.nw-now{display:flex;align-items:center;gap:10px;margin:12px 0 4px;padding:12px 12px 12px 16px;border-radius:18px;background:var(--accent-soft)}
+.nw-now .rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.nw-now .rt b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nw-now .rt small{color:var(--muted);font-size:12px}
+.nw-ctl{display:flex;align-items:center;gap:2px}
+.nw-ctl .ib{font-weight:700;font-size:13px;color:var(--accent)}
+.nw-ctl .nw-pp{background:var(--accent);color:var(--accent-ink)}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
 .nw-help ol{margin:8px 0 10px;padding-left:20px;line-height:1.5}
@@ -837,19 +844,48 @@ async function nwLogout(){
   var P=UPDP();if(P&&P.neowakeLogout){try{await P.neowakeLogout();}catch(e){}}
   nwSession=false;renderMain();toast('Von Neowake abgemeldet.');
 }
+var nwT=null, nwOpenState=false;
+function nwPoll(){
+  var P=UPDP();if(!P||!P.neowakeState)return;
+  P.neowakeState().then(function(r){
+    nwOpenState=!!(r&&r.open);
+    var s=null;try{s=r&&r.state?JSON.parse(r.state):null;}catch(e){}
+    var el=$('#nwNow');if(!el)return;
+    if(!nwOpenState||!s||(!s.src&&!s.title)){el.innerHTML='';return;}
+    var name=s.title||s.page||'Neowake';
+    el.innerHTML='<div class="nw-now"><div class="rt"><small>'+(s.playing?'Läuft gerade in Neowake':'Pausiert in Neowake')+'</small><b>'+esc(name)+'</b><small>'+(s.d?fmt(s.t)+' / '+fmt(s.d):'')+'</small></div>'+
+      '<div class="nw-ctl"><button class="ib" data-act="nwctl" data-c="back" aria-label="15 Sekunden zurück">−15</button>'+
+      '<button class="ib nw-pp" data-act="nwctl" data-c="toggle" aria-label="'+(s.playing?'Pause':'Abspielen')+'">'+ic(s.playing?'pause':'play',1)+'</button>'+
+      '<button class="ib" data-act="nwctl" data-c="fwd" aria-label="15 Sekunden vor">+15</button></div></div>';
+  }).catch(function(){});
+}
+function nwStart(){if(nwT)return;nwPoll();nwT=setInterval(function(){if(view.tab!=='neowake'||view.detail){clearInterval(nwT);nwT=null;return;}if(document.visibilityState==='visible')nwPoll();},2000);}
+async function nwDiag(){
+  var P=UPDP();if(!P||!P.neowakeDiag){toast('Bitte erst die App aktualisieren.');return;}
+  try{
+    var r=await P.neowakeDiag(), d=String((r&&r.diag)||'');
+    try{d=JSON.parse(d);}catch(e){}
+    if(!d){toast('Keine Daten. Öffne Neowake, melde dich an, starte kurz einen Titel und versuche es dann nochmal.');return;}
+    var txt='NEOWAKE-DIAGNOSE (ohne Kennwort)\n'+(typeof d==='string'?d:JSON.stringify(d));
+    try{await navigator.clipboard.writeText(txt);toast('Diagnose kopiert. Füge sie im Chat mit Claude ein.');}
+    catch(e){openSheet('<div class="sform"><h3>Diagnose</h3><p>Alles markieren, kopieren und im Chat einfügen:</p><textarea style="height:220px;font-size:11px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:8px" readonly>'+esc(txt)+'</textarea><button class="btn" data-sa="cancel">Fertig</button></div>');}
+  }catch(e){toast('Öffne zuerst Neowake über „Neowake öffnen“, dann hier nochmal tippen.');}
+}
 function neowakeHTML(){
+  setTimeout(nwStart,50);
   if(isNative()&&nwSession===null)nwStatus();
   var h='<div class="nw-card"><div class="nw-logo">'+ic('note')+'</div><h2>Neowake</h2>'+
     '<p>Deine Neowake-Inhalte direkt in Fox Musik, mit deinem eigenen Konto.</p>'+
     '<button class="btn" data-act="nwopen">'+ic('play',1)+'Neowake öffnen</button>';
   if(nwSession)h+='<p class="nw-ok">'+ic('heart',1)+'Anmeldung gespeichert</p>';
   h+='</div>';
+  h+='<div id="nwNow"></div>';
   h+='<div class="nw-help"><b>So geht’s</b><ol>'+
     '<li>Tippe auf „Neowake öffnen“ und melde dich mit <b>deinem</b> Neowake-Benutzernamen und Kennwort an.</li>'+
     '<li>Hake dabei <b>„Eingeloggt bleiben“</b> an. Dann bist du beim nächsten Start automatisch angemeldet.</li>'+
     '<li>Mit der Zurück-Geste kommst du wieder zu Fox Musik. Neowake bleibt im Hintergrund offen, „Neowake öffnen“ bringt dich direkt zurück.</li>'+
     '</ol><small>Fox Musik speichert dein Kennwort nicht, die Anmeldung verwaltet Neowake selbst.</small></div>';
-  if(nwSession)h+='<div class="bar" style="justify-content:center"><button class="pill" data-act="nwlogout">Abmelden</button></div>';
+  h+='<div class="bar" style="justify-content:center">'+(nwSession?'<button class="pill" data-act="nwlogout">Abmelden</button>':'')+'<button class="pill" data-act="nwdiag">Diagnose für Claude kopieren</button></div>';
   return h;
 }
 function renderMain(){
@@ -1733,6 +1769,8 @@ document.addEventListener('click',function(e){
     case 'spconnect':spConnect();break;
     case 'nwopen':nwOpen();break;
     case 'nwlogout':nwLogout();break;
+    case 'nwdiag':nwDiag();break;
+    case 'nwctl':{var Pc=UPDP();if(Pc&&Pc.neowakeControl)Pc.neowakeControl({cmd:el.dataset.c}).then(function(){setTimeout(nwPoll,400);}).catch(function(){});break;}
     case 'spdisconnect':spDisconnect();break;
     case 'spresetid':spResetId();break;
     case 'sprefresh':spCache={};render();break;

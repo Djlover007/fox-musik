@@ -380,6 +380,35 @@ public class UpdatePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void neowakeState(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("open", NeowakeActivity.current.get() != null);
+        o.put("state", NeowakeActivity.state);
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void neowakeControl(PluginCall call) {
+        NeowakeActivity.control(call.getString("cmd", "toggle"));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void neowakeDiag(final PluginCall call) {
+        boolean ok = NeowakeActivity.collectDiag(new Runnable() {
+            @Override
+            public void run() {
+                JSObject o = new JSObject();
+                o.put("diag", NeowakeActivity.diag);
+                call.resolve(o);
+            }
+        });
+        if (!ok) {
+            call.reject("Neowake ist nicht offen");
+        }
+    }
+
+    @PluginMethod
     public void neowakeStatus(PluginCall call) {
         String c = CookieManager.getInstance().getCookie("https://app.neowake.de");
         JSObject o = new JSObject();
