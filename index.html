@@ -84,6 +84,9 @@ svg.i.f{fill:currentColor;stroke:none}
 .nwdl.ok{color:var(--accent)}
 .nwdl.run{font-size:11.5px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
 .pill[disabled]{opacity:.6}
+.nwsearch{display:flex;gap:8px;margin:10px 0 0}
+.nwsearch input{flex:1;min-width:0;height:48px;border-radius:8px;border:0;background:var(--surface2);color:var(--fg);padding:0 14px;font-weight:500}
+.nwsearch .btn{margin:0;height:48px;padding:0 16px;border-radius:8px}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
@@ -911,8 +914,14 @@ function tracksHTML(){
   if(!all.length)return emptyHTML();
   var list=all;
   if(q){var t=q.toLowerCase();list=all.filter(function(s){return (s.title+' '+s.artist+' '+s.album).toLowerCase().indexOf(t)>-1;});}
-  if(!list.length){listIds=[];return '<p class="none">Nichts gefunden für „'+esc(q)+'“.</p>';}
-  return barHTML(list.length)+rowsHTML(list);
+  var nwPart='';
+  if(q&&nwGQ&&isNative()&&nwSession!==false){
+    var c=nwLoad('s:'+nwGQ.toLowerCase(),function(){return nwSearch(nwGQ);});
+    if(c.loading)nwPart='<div class="sec"><h3>Neowake-Sessions</h3></div><p class="none" style="padding:8px 0">Suche …</p>';
+    else if(c.data&&c.data.length)nwPart='<div class="sec"><h3>Neowake-Sessions</h3></div>'+nwResultRows(c.data.slice(0,8));
+  }
+  if(!list.length){listIds=[];return '<p class="none">Nichts in deiner Musik gefunden für „'+esc(q)+'“.</p>'+nwPart;}
+  return barHTML(list.length)+rowsHTML(list)+nwPart;
 }
 function plRow(key,name,arr,kind,icon){
   var tile=kind==='fav'?'<div class="cov tile fav">'+ic(icon||'heart',1)+'</div>':(arr.length?coverHTML(firstCover(arr),'tile',name,'list'):coverHTML(null,'tile',name,'list'));
@@ -1097,6 +1106,46 @@ async function nwTracks(album){
     }catch(e){nwNote('Album-Seite Fehler: '+spMsg(e));}
   }
   return [];
+}
+async function nwSearch(qq){
+  var items=[], seen={};
+  function add(p){var id=String(p.id);if(seen[id])return;seen[id]=1;
+    var fm=p._embedded&&p._embedded['wp:featuredmedia']&&p._embedded['wp:featuredmedia'][0];
+    var sz=fm&&fm.media_details&&fm.media_details.sizes, cov=(sz&&(sz.medium||sz.thumbnail)&&(sz.medium||sz.thumbnail).source_url)||(fm&&fm.source_url)||'';
+    items.push({id:id,title:nwDecode(p.title&&p.title.rendered!=null?p.title.rendered:p.title),link:p.link||p.url||'',cover:cov});}
+  try{
+    var r=await nwFetch('/wp-json/wp/v2/album?per_page=40&_embed=1&search='+encodeURIComponent(qq));
+    var arr=JSON.parse(r.text||'[]');if(Array.isArray(arr))arr.forEach(add);
+  }catch(e){nwNote('Suche (Alben) Fehler: '+spMsg(e));}
+  if(items.length<5){
+    try{
+      var r2=await nwFetch('/wp-json/wp/v2/search?per_page=30&subtype=album&search='+encodeURIComponent(qq));
+      var a2=JSON.parse(r2.text||'[]');if(Array.isArray(a2))a2.forEach(function(x){add({id:x.id,title:x.title,url:x.url});});
+    }catch(e){nwNote('Suche (allgemein) Fehler: '+spMsg(e));}
+  }
+  nwNote('Suche „'+qq+'“: '+items.length+' Treffer');
+  return items;
+}
+var nwQ='';
+function nwResultRows(list){
+  return list.map(function(a){
+    nwCache['a:'+a.id+':meta']=Object.assign({},nwCache['a:'+a.id+':meta']||{},a,{cover:a.cover||((nwCache['a:'+a.id+':meta']||{}).cover)||''});
+    var cv=nwCache['a:'+a.id+':meta'].cover;
+    return '<div class="row"><button class="rowmain" data-act="open" data-type="nwa" data-key="'+esc(a.id)+'">'+(cv?'<div class="cov rc" style="background-image:url(\''+esc(cv)+'\')"></div>':'<div class="cov ph rc" style="--h:'+hue(a.title)+'">'+ic('wave')+'</div>')+'<span class="rt"><b>'+esc(a.title)+'</b><small>Neowake-Session</small></span></button></div>';
+  }).join('');
+}
+function nwSearchHTML(){
+  var h='<h2 class="nw-h2">Session finden</h2><p class="nw-sub">Suche nach einem Stichwort wie „Entspannung“, „Schlaf“ oder „Fokus“.</p>'+
+    '<form class="nwsearch" data-form="nws"><input id="nwq" type="search" placeholder="z. B. Entspannung, Schlaf, Fokus …" value="'+esc(nwQ)+'" autocomplete="off" enterkeyhint="search"><button class="btn" type="submit">'+ic('search')+'Suchen</button></form>';
+  if(nwQ){
+    var c=nwLoad('s:'+nwQ.toLowerCase(),function(){return nwSearch(nwQ);});
+    h+='<div class="sec" style="margin-top:16px"><h3>Ergebnisse</h3><button data-act="nwopenurl" data-u="'+esc(NW_BASE+'/dashboard/')+'">Erweiterte Suche</button></div>';
+    if(c.loading)h+='<p class="none">Suche …</p>';
+    else if(c.err)h+='<p class="none">Suche fehlgeschlagen: '+esc(c.err)+'</p>';
+    else if(!c.data.length)h+='<p class="none">Keine Session zu „'+esc(nwQ)+'“ gefunden. Probier ein anderes Wort oder die „Erweiterte Suche“ in Neowake.</p>';
+    else h+=nwResultRows(c.data);
+  }
+  return h;
 }
 function nwMenuHTML(){
   var h='';
@@ -1329,7 +1378,7 @@ function neowakeHTML(){
   if(nwSession)h+='<p class="nw-ok">'+ic('heart',1)+'Anmeldung gespeichert</p>';
   h+='</div>';
   h+='<div id="nwNow"></div>';
-  if(isNative())h+='<h2 class="nw-h2">Bibliothek</h2><p class="nw-sub">Neowake-Titel direkt im Fox-Player hören.</p>'+nwMenuHTML();
+  if(isNative())h+=nwSearchHTML()+'<h2 class="nw-h2">Bibliothek</h2><p class="nw-sub">Neowake-Titel direkt im Fox-Player hören.</p>'+nwMenuHTML();
   h+='<div class="nw-help"><b>So geht’s</b><ol>'+
     '<li>Tippe auf „Neowake öffnen“ und melde dich mit <b>deinem</b> Neowake-Benutzernamen und Kennwort an.</li>'+
     '<li>Hake dabei <b>„Eingeloggt bleiben“</b> an. Dann bist du beim nächsten Start automatisch angemeldet.</li>'+
@@ -2342,7 +2391,9 @@ document.addEventListener('click',function(e){
   }
 });
 $('#files').addEventListener('change',function(e){var f=Array.prototype.slice.call(e.target.files);e.target.value='';addFiles(f);});
-$('#q').addEventListener('input',function(e){q=e.target.value.trim();renderMain();});
+var nwGQ='', nwGQT=null;
+$('#q').addEventListener('input',function(e){q=e.target.value.trim();renderMain();clearTimeout(nwGQT);nwGQT=setTimeout(function(){var v=q.length>=3?q:'';if(v!==nwGQ){nwGQ=v;renderMain();}},700);});
+document.addEventListener('submit',function(e){var f=e.target;if(f&&f.dataset&&f.dataset.form==='nws'){e.preventDefault();var i=$('#nwq');nwQ=((i&&i.value)||'').trim();if(i)i.blur();renderMain();}});
 var seek=$('#seek');
 seek.addEventListener('input',function(){
   seeking=true;
