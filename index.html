@@ -466,7 +466,7 @@ function coverHTML(s,cls,seed,icon,round){
 function firstCover(arr){for(var i=0;i<arr.length;i++){if(arr[i].cover)return arr[i];}return arr[0]||null;}
 
 /* ---------- playback ---------- */
-function newAudio(){var a=new Audio();a.preload='auto';wireAudio(a);return a;}
+function newAudio(plain){var a=new Audio();a.preload='auto';wireAudio(a);if(!plain&&state.skip)silenceInit(a);return a;}
 function fadeVol(a,from,to,secs,done){
   clearInterval(a._ft);
   var t0=Date.now(), ms=Math.max(200,secs*1000);
@@ -489,12 +489,16 @@ function loadSong(s,fx){
   cur=s;
   var old=null, secs=0;
   var st0=state.stats[s.id]||(state.stats[s.id]={n:0,last:0});st0.last=Date.now();saveStatsSoon();
+  var remote=!!s.url;
   if(fx&&audio&&!audio.paused&&state.fade>0){
-    old=audio;audio=newAudio();
+    old=audio;audio=newAudio(remote);
     secs=Math.max(1,Math.min(state.fade,(old.duration||0)-old.currentTime||state.fade));
   }else{
     clearInterval(audio._ft);audio.volume=1;audio._fast=false;
     if(audio._url){URL.revokeObjectURL(audio._url);audio._url='';}
+    // Titel aus dem Internet (Neowake) duerfen nicht durch die Stille-Analyse laufen, sonst bleiben sie stumm
+    if(remote&&audio._an){var o=audio;audio=newAudio(true);dropAudio(o);}
+    else if(!remote&&!audio._an&&state.skip){var o2=audio;audio=newAudio();dropAudio(o2);}
   }
   audio._counted=false;
   if(s.url){audio.src=s.url;}
@@ -596,8 +600,9 @@ function wireAudio(a){
   a.addEventListener('play',function(){if(a===audio){updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
   a.addEventListener('pause',function(){if(a===audio){updateTransport();pushNative();}});
   a.addEventListener('ended',function(){if(a===audio)next(true);});
+  a.addEventListener('error',function(){if(a===audio&&cur&&cur.url)nwNote('Audio-Fehler Code '+(a.error&&a.error.code)+' '+String(a.currentSrc||'').split('?')[0]);});
+  a.addEventListener('loadedmetadata',function(){if(a===audio&&cur&&cur.url)nwNote('Audio geladen, Länge '+Math.round(a.duration||0)+'s, Lautstärke '+a.volume+', stumm '+a.muted+', Analyse '+!!a._an);});
   a.addEventListener('error',function(){if(a===audio&&cur)toast(cur.url?'Dieser Neowake-Titel lässt sich in Fox Musik nicht abspielen. Nutze „In Neowake öffnen“ und schick Claude die Diagnose.':'Dieser Titel lässt sich nicht abspielen.');});
-  if(state.skip)silenceInit(a);
 }
 audio=newAudio();
 
@@ -1066,7 +1071,7 @@ async function nwDiag(){
   var P=UPDP();
   if(P&&P.neowakeFetch){
     toast('Prüfe Neowake … (bis zu 30 Sekunden)',true);
-    var out={v:3};
+    var out={v:3,stilleUeberspringen:!!state.skip,lautstaerke:audio?audio.volume:null,laeuft:audio?!audio.paused:null,zeit:audio?Math.round(audio.currentTime):null,analyse:audio?!!audio._an:null};
     try{
       var st=await P.neowakeStatus();out.session=!!(st&&st.hasSession);
       var al=await nwAlbumsFromPage('/love-code/');out.loveCodeAlben=al.length;out.sample=al.slice(0,3).map(function(a){return {id:a.id,title:a.title,link:String(a.link).replace(NW_BASE,'')};});
@@ -1910,7 +1915,7 @@ function onSetting(e){
     $('#vFade').textContent=fmtFade();
   }else if(k==='skip'){
     state.skip=el.checked;
-    if(state.skip){silenceInit(audio);}else{audio._fast=false;audio.playbackRate=state.speed;}
+    if(state.skip){if(!(cur&&cur.url))silenceInit(audio);}else{audio._fast=false;audio.playbackRate=state.speed;}
     if(state.skip&&!audio._an)toast('Wirkt ab dem nächsten Titel.');
   }else if(k==='lock'){state.lock=el.checked;}
   else if(k==='dark'){state.theme=el.checked?'dark':'light';applyTheme();}
