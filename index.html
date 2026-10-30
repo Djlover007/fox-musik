@@ -859,8 +859,8 @@ function nwNote(s){nwLog.push(new Date().toISOString().slice(11,19)+' '+String(s
 async function nwFetch(path,opt){
   var P=UPDP();if(!P||!P.neowakeFetch)throw new Error('App aktualisieren');
   opt=opt||{};
-  var r=await P.neowakeFetch({url:nwAbs(path),probe:!!opt.probe,cookies:opt.cookies!==false});
-  nwNote((opt.probe?'PROBE ':'GET ')+String(nwAbs(path)).split('?')[0]+' -> '+r.status+' '+(r.type||'')+' '+((r.text||'').length)+'B');
+  var r=await P.neowakeFetch({url:nwAbs(path),probe:!!opt.probe,cookies:opt.cookies!==false,method:opt.method||'GET',body:opt.body||''});
+  nwNote((opt.probe?'PROBE ':(opt.method||'GET')+' ')+String(nwAbs(path)).split('?')[0]+' -> '+r.status+' '+(r.type||'')+' '+((r.text||'').length)+'B');
   return r;
 }
 function nwLoad(key,fn){
@@ -871,7 +871,24 @@ function nwLoad(key,fn){
 }
 function nwDecode(s){var t=document.createElement('textarea');t.innerHTML=String(s||'');return t.value;}
 function nwSlug(s){return String(s||'').replace(/[-_]+/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});}
+async function nwFavorites(){
+  var r=await nwFetch('/favoriten/');
+  var m=(r.text||'').match(/CCC_MY_FAVORITE_LIST\s*=\s*(\{[^;]*?\})\s*;/), cfg=null;
+  try{cfg=m?JSON.parse(m[1]):null;}catch(e){}
+  if(!cfg||!cfg.nonce){nwNote('Favoriten: kein Schlüssel auf der Seite gefunden (angemeldet?)');return [];}
+  var body=new URLSearchParams({'action':cfg.action||'ccc_my_favorite-list-action','nonce':cfg.nonce,'ccc-my_favorite_post':'','ccc-excerpt':'0','ccc-posts_per_page':'100','looplength':'0'}).toString();
+  var r2=await nwFetch(cfg.api||'/wp-admin/admin-ajax.php',{method:'POST',body:body});
+  var doc=new DOMParser().parseFromString(r2.text||'','text/html'), items=[], seen={};
+  [].slice.call(doc.querySelectorAll('.list-ccc_favorite')).forEach(function(el){
+    var tg=el.querySelector('[data-post_id-ccc_favorite]'), a=el.querySelector('.title-post a')||el.querySelector('a[href]'), img=el.querySelector('img');
+    var id=tg?tg.getAttribute('data-post_id-ccc_favorite'):'';if(!id||seen[id])return;seen[id]=1;
+    items.push({id:id,title:nwDecode(a?(a.textContent||'').trim():(img?img.getAttribute('alt'):'Favorit')),link:a?nwAbs(a.getAttribute('href')):'',cover:img&&img.getAttribute('src')?nwAbs(img.getAttribute('src')):''});
+  });
+  nwNote('Favoriten gefunden: '+items.length+(items.length?'':' Antwort: '+String(r2.text||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,120)));
+  return items;
+}
 async function nwAlbumsFromPage(path){
+  if(path==='/favoriten/')return nwFavorites();
   var r=await nwFetch(path);
   if(r.status>=400)throw new Error('Neowake antwortet mit '+r.status);
   var doc=new DOMParser().parseFromString(r.text||'','text/html');

@@ -389,6 +389,9 @@ public class UpdatePlugin extends Plugin {
         final String url = call.getString("url", "");
         final boolean probe = call.getBoolean("probe", false);
         final boolean withCookies = call.getBoolean("cookies", true);
+        final String method = "POST".equalsIgnoreCase(call.getString("method", "GET")) ? "POST" : "GET";
+        final String body = call.getString("body", "");
+        final String ctype = call.getString("contentType", "application/x-www-form-urlencoded; charset=UTF-8");
         if (url == null || !url.startsWith("https://")) {
             call.reject("Ungueltige Adresse");
             return;
@@ -418,6 +421,19 @@ public class UpdatePlugin extends Plugin {
                         }
                         if (probe) {
                             c.setRequestProperty("Range", "bytes=0-1");
+                        }
+                        if ("POST".equals(method) && hop == 0) {
+                            c.setRequestMethod("POST");
+                            c.setDoOutput(true);
+                            c.setRequestProperty("Content-Type", ctype);
+                            c.setRequestProperty("X-Requested-With", "XMLHttpRequest");
+                            c.setRequestProperty("Origin", "https://app.neowake.de");
+                            c.setRequestProperty("Referer", "https://app.neowake.de/favoriten/");
+                            byte[] out = body.getBytes("UTF-8");
+                            c.setFixedLengthStreamingMode(out.length);
+                            OutputStream os = c.getOutputStream();
+                            os.write(out);
+                            os.close();
                         }
                         status = c.getResponseCode();
                         java.util.List<String> sc = c.getHeaderFields().get("Set-Cookie");
