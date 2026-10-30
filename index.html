@@ -954,7 +954,7 @@ async function nwFetch(path,opt){
 function nwLoad(key,fn){
   if(nwCache[key])return nwCache[key];
   nwCache[key]={loading:true};
-  fn().then(function(v){nwCache[key]={data:v};renderMain();renderHead();}).catch(function(e){nwNote('FEHLER '+key+': '+spMsg(e));nwCache[key]={err:spMsg(e)};renderMain();});
+  fn().then(function(v){nwCache[key]={data:v,t:Date.now()};renderMain();renderHead();}).catch(function(e){nwNote('FEHLER '+key+': '+spMsg(e));nwCache[key]={err:spMsg(e)};renderMain();});
   return nwCache[key];
 }
 function nwDecode(s){var t=document.createElement('textarea');t.innerHTML=String(s||'');return t.value;}
@@ -1090,7 +1090,7 @@ function nwAlbumHTML(id){
 var nwSession=null;
 function nwStatus(){
   var P=UPDP();if(!P||!P.neowakeStatus)return;
-  P.neowakeStatus().then(function(r){var v=!!(r&&r.hasSession);if(v!==nwSession){nwSession=v;if(view.tab==='neowake'&&!view.detail)renderMain();}}).catch(function(){});
+  P.neowakeStatus().then(function(r){var v=!!(r&&r.hasSession);if(v!==nwSession){nwSession=v;if((view.tab==='neowake'||view.tab==='home')&&!view.detail)renderMain();}}).catch(function(){});
 }
 function nwOpen(){
   if(audio&&!audio.paused)audio.pause();
@@ -1276,6 +1276,19 @@ function renderNav(){
 function greet(){var hr=new Date().getHours();return hr<5?'Gute Nacht':hr<11?'Guten Morgen':hr<18?'Guten Tag':'Guten Abend';}
 function qTile(act,attrs,cov,label){return '<button class="qt" data-act="'+act+'"'+attrs+'>'+cov+'<span>'+esc(label)+'</span></button>';}
 function qIcon(icon,a1,a2){return '<div class="qi" style="--a1:'+a1+';--a2:'+a2+'">'+ic(icon,1)+'</div>';}
+function nwHomeHTML(){
+  if(!isNative())return '';
+  if(nwSession===null)nwStatus();
+  if(nwSession===false)return '';
+  var c=nwLoad('p:/favoriten/',function(){return nwAlbumsFromPage('/favoriten/');});
+  var h='<div class="sec"><h3>Neowake-Favoriten</h3><button data-act="open" data-type="nwp" data-key="/favoriten/">Alle anzeigen</button></div>';
+  if(c.loading)return h+'<div class="hrow">'+[0,1,2].map(function(){return '<div class="hc"><div class="cov" style="opacity:.35"></div><b>&nbsp;</b><small>&nbsp;</small></div>';}).join('')+'</div>';
+  if(c.err||!c.data||!c.data.length)return h+'<p class="nw-sub" style="margin:0">'+(c.err?'Konnte nicht laden. ':'Noch keine Favoriten in Neowake. ')+'<button class="pill" style="height:30px;margin-left:6px" data-act="nwrefresh">Neu laden</button></p>';
+  return h+'<div class="hrow">'+c.data.map(function(a){
+    nwCache['a:'+a.id+':meta']=a;
+    return '<button class="hc" data-act="open" data-type="nwa" data-key="'+esc(a.id)+'">'+(a.cover?'<div class="cov" style="background-image:url(\''+esc(a.cover)+'\')"></div>':'<div class="cov ph" style="--h:'+hue(a.title)+'">'+ic('wave')+'</div>')+'<b>'+esc(a.title)+'</b><small>Neowake</small></button>';
+  }).join('')+'</div>';
+}
 function homeHTML(){
   var h='<p class="hello">'+greet()+'</p>';
   h+='<div class="qgrid">'+
@@ -1286,6 +1299,7 @@ function homeHTML(){
     qTile('open',' data-type="spot" data-key="list"',qIcon('list','#8a5cff','#4122a8'),'Spotify')+
     qTile('nav',' data-n="neowake"',qIcon('wave','#d24dff','#6b1fa8'),'Neowake')+
     '</div>';
+  h+=nwHomeHTML();
   if(!songs.length)return h+emptyHTML();
   var recent=smartList('recent').slice(0,12), pool=recent.length?recent:smartList('new').slice(0,12);
   listIds=pool.map(function(s){return s.id;});
@@ -2163,6 +2177,7 @@ document.addEventListener('click',function(e){
     case 'spconnect':spConnect();break;
     case 'nwopen':nwOpen();break;
     case 'nwlogout':nwLogout();break;
+    case 'nwrefresh':delete nwCache['p:/favoriten/'];renderMain();break;
     case 'nwopenurl':{if(audio&&!audio.paused)audio.pause();var Pu=UPDP();if(Pu&&Pu.openNeowake)Pu.openNeowake({url:el.dataset.u}).catch(function(){});else window.open(el.dataset.u,'_blank');break;}
     case 'nwdiag':nwDiag();break;
     case 'nwctl':{var Pc=UPDP();if(Pc&&Pc.neowakeControl)Pc.neowakeControl({cmd:el.dataset.c}).then(function(){setTimeout(nwPoll,400);}).catch(function(){});break;}
@@ -2371,6 +2386,7 @@ document.addEventListener('visibilitychange',function(){
 
   if(document.visibilityState==='visible'&&isNative()&&ready)autoCheck();
   if(document.visibilityState==='visible'&&isNative()&&view.tab==='neowake')nwStatus();
+  if(document.visibilityState==='visible'&&isNative()&&view.tab==='home'&&!view.detail){var fc=nwCache['p:/favoriten/'];if(fc&&!fc.loading&&Date.now()-(fc.t||0)>60000){delete nwCache['p:/favoriten/'];nwSession=null;renderMain();}}
 });
 
 /* ---------- start ---------- */
