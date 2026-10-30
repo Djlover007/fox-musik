@@ -1232,13 +1232,25 @@ var nwOpenDesc={};
 /* ---------- Neowake-Downloads (landen im Musik-Ordner unter „Neowake“) ---------- */
 var nwDlQ=[], nwDlBusy=false, nwDlPct={}, nwDlL=false, nwDlRT=null;
 function nwDlKey(s){return String(s.url||'').split('?')[0];}
-function nwIsDl(s){return !!(s&&state.nwDl[nwDlKey(s)]);}
+function nwFileName(t){var x=String(t||'').replace(/[\\\/:*?"<>|\n\r\t]/g,' ').replace(/\s+/g,' ').trim();if(x.length>80)x=x.slice(0,80).trim();return (x||'Neowake').toLowerCase();}
+function nwLocalCopy(s){
+  if(!s)return null;var fn=nwFileName(s.title), tl=String(s.title||'').trim().toLowerCase();
+  for(var i=0;i<songs.length;i++){var x=songs[i];if(!x.device||!/\/Neowake\//i.test(x.path||''))continue;
+    var base=String(x.path).split('/').pop().replace(/\.\w+$/,'').toLowerCase();
+    if(base===fn||String(x.title||'').trim().toLowerCase()===tl)return x;}
+  return null;
+}
+function nwIsDl(s){
+  if(!s)return false;var f=state.nwDl[nwDlKey(s)];if(!f)return false;
+  if(nwLocalCopy(s))return true;
+  return typeof f==='number'&&Date.now()-f<120000; // gerade geladen, Suche läuft noch
+}
 function nwDlRender(){clearTimeout(nwDlRT);nwDlRT=setTimeout(function(){if(view.detail&&view.detail.type==='nwa')renderMain();},250);}
-function nwDownload(ids){
+function nwDownload(ids,force){
   var P=UPDP();if(!P||!P.neowakeDownload){toast('Bitte erst die App aktualisieren.');return;}
   if(!nwDlL){nwDlL=true;try{P.addListener('nwDownload',function(e){if(e&&e.id){nwDlPct[e.id]=e.percent;nwDlRender();}});}catch(x){}}
   var add=0;
-  ids.forEach(function(id){var s=byId(id);if(s&&s.url&&!nwIsDl(s)&&nwDlQ.indexOf(id)<0&&nwDlPct[id]==null){nwDlQ.push(id);nwDlPct[id]=0;add++;}});
+  ids.forEach(function(id){var s=byId(id);if(s&&s.url&&(force||!nwIsDl(s))&&nwDlQ.indexOf(id)<0&&nwDlPct[id]==null){nwDlQ.push(id);nwDlPct[id]=0;add++;}});
   if(!add){toast('Schon heruntergeladen.');return;}
   toast(add===1?'Download gestartet.':add+' Titel werden heruntergeladen.');
   nwDlRender();nwDlNext();
@@ -1261,7 +1273,7 @@ async function nwDlNext(){
 }
 function nwDlBtn(sid){
   var s=byId(sid);if(!s||!isNative())return '';
-  if(nwIsDl(s))return '<span class="ib nwdl ok" aria-label="Heruntergeladen">'+ic('check')+'</span>';
+  if(nwIsDl(s))return '<button class="ib nwdl ok" data-act="nwdlre" data-id="'+esc(sid)+'" aria-label="Heruntergeladen, nochmal laden">'+ic('check')+'</button>';
   if(nwDlPct[sid]!=null)return '<span class="ib nwdl run" aria-label="Lädt">'+(nwDlPct[sid]||0)+'%</span>';
   return '<button class="ib nwdl" data-act="nwdl" data-id="'+esc(sid)+'" aria-label="Herunterladen">'+ic('dl')+'</button>';
 }
@@ -1275,6 +1287,7 @@ function nwInfoSheet(sid){
     '<button class="btn" style="width:100%;margin-top:14px" data-sa="cancel">Schließen</button>');
 }
 function nwAlbumHTML(id){
+  if(isNative()&&!scanning&&Date.now()-lastScan>20000){lastScan=Date.now();setTimeout(function(){scanDevice(false);},50);}
   var meta=(nwCache['a:'+id+':meta'])||{id:id,title:'Neowake',link:'',cover:''};
   var c=nwLoad('t:'+id,function(){return nwTracks(meta);});
   var h='<div class="dhead">'+(meta.cover?'<div class="cov dc" style="background-image:url(\''+esc(meta.cover)+'\')"></div>':'<div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic('note',1)+'</div>')+'<div class="dtxt"><h2>'+esc(meta.title)+'</h2><p>Neowake'+(c.data?' · '+c.data.length+' Titel':'')+'</p></div></div>';
@@ -1557,7 +1570,7 @@ function songSheet(id){
   h+=sItem('next','list','Als Nächstes abspielen');
   h+=sItem('addpl','listplus','Zu Playlist hinzufügen');
   h+=sItem('fav','heart',isFav?'Aus Favoriten entfernen':'Zu Favoriten hinzufügen');
-  if(s.url&&isNative())h+=sItem('nwdl2','dl',nwIsDl(s)?'Schon heruntergeladen':'Herunterladen');
+  if(s.url&&isNative())h+=sItem('nwdl2','dl',nwIsDl(s)?'Nochmal herunterladen':'Herunterladen');
   if(s.desc||(s.url&&nwCache['d:'+s.albumId]&&nwCache['d:'+s.albumId].data))h+=sItem('nwinfo2','info','Beschreibung anzeigen');
   h+=sItem('spot','search','In Spotify suchen');
   if(view.detail&&view.detail.type==='pl'&&state.playlists.some(function(p){return p.id===view.detail.key;}))h+=sItem('rmpl','trash','Aus dieser Playlist entfernen');
@@ -2371,7 +2384,7 @@ function handleSheet(act,el){
     }
     case 'next':queueNext(sctx.id);closeSheet();break;
     case 'nwinfo2':nwInfoSheet(sctx.id);break;
-    case 'nwdl2':closeSheet();nwDownload([sctx.id]);break;
+    case 'nwdl2':{closeSheet();var s2=byId(sctx.id);if(s2&&nwIsDl(s2)){if(!window.confirm('Schon heruntergeladen. Nochmal laden?'))break;delete state.nwDl[nwDlKey(s2)];saveState();}nwDownload([sctx.id],true);break;}
     case 'addpl':addPlSheet();break;
     case 'fav':toggleFav(sctx.id);closeSheet();break;
     case 'rmpl':{var p=state.playlists.find(function(x){return x.id===view.detail.key;});if(p){p.ids=p.ids.filter(function(x){return x!==sctx.id;});saveState();}closeSheet();render();toast('Aus Playlist entfernt');break;}
@@ -2429,6 +2442,7 @@ document.addEventListener('click',function(e){
     case 'nwlogout':nwLogout();break;
     case 'nwinfo':nwInfoSheet(el.dataset.id);break;
     case 'nwdl':nwDownload([el.dataset.id]);break;
+    case 'nwdlre':{var sr=byId(el.dataset.id);if(sr&&window.confirm('„'+sr.title+'“ ist schon heruntergeladen. Nochmal laden?')){delete state.nwDl[nwDlKey(sr)];saveState();nwDownload([el.dataset.id],true);}break;}
     case 'nwdlall':nwDownload(listIds.slice());break;
     case 'nwmore':nwOpenDesc[el.dataset.id]=!nwOpenDesc[el.dataset.id];renderMain();break;
     case 'nwrefresh':delete nwCache['p:/favoriten/'];renderMain();break;
