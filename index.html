@@ -56,6 +56,19 @@ svg.i.f{fill:currentColor;stroke:none}
 /* header */
 .head{display:flex;align-items:center;gap:4px;padding-top:12px;min-height:68px;flex:none}
 .head h1{margin:0;flex:1;min-width:0;font:700 32px/1.1 var(--font-display);letter-spacing:-.02em}
+.brand{flex:1;min-width:0;display:flex;flex-direction:column}
+.brand small{font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:2px}
+.brand small span{color:var(--accent);font-weight:700}
+#splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:var(--bg);color:var(--fg);transition:opacity .45s ease,visibility 0s .45s}
+#splash.hide{opacity:0;visibility:hidden}
+#splash .sp-logo{width:96px;height:96px;border-radius:28px;display:grid;place-items:center;background:#2C66F5;color:var(--accent-ink);box-shadow:0 14px 34px var(--shadow);animation:spPop .6s cubic-bezier(.2,.9,.3,1.3) both}
+#splash .sp-logo svg{width:66px;height:66px}
+#splash b{font:700 30px/1.1 var(--font-display);letter-spacing:-.02em;margin-top:8px;animation:spUp .5s .15s ease both}
+#splash small{font-size:14px;color:var(--muted);letter-spacing:.06em;animation:spUp .5s .3s ease both}
+#splash small span{color:var(--accent);font-weight:700}
+@keyframes spPop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+@keyframes spUp{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){#splash *{animation:none!important}}
 .head h1.small{font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ib{width:44px;height:44px;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;flex:none;padding:0}
 .ib:hover,.ib[aria-pressed="true"]{background:var(--accent-soft)}
@@ -242,6 +255,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 
 <input id="files" type="file" accept="audio/*,.mp3,.m4a,.flac,.ogg,.wav" multiple hidden>
 
+<div id="splash" aria-hidden="true"><div class="sp-logo"><svg viewBox="0 0 100 100" aria-hidden="true"><polygon fill="#F57C1F" points="12,10 38,30 62,30 88,10 93,50 50,93 7,50"/><polygon fill="#FFF1DC" points="7,50 38,60 50,93"/><polygon fill="#FFF1DC" points="93,50 62,60 50,93"/><polygon fill="#D65C0C" points="17,19 31,31 18,42"/><polygon fill="#D65C0C" points="83,19 69,31 82,42"/><polygon fill="#2A1608" points="30,47 42,52 31,54"/><polygon fill="#2A1608" points="70,47 58,52 69,54"/><polygon fill="#2A1608" points="43,81 57,81 50,93"/></svg></div><b>Fox Musik</b><small>Design by <span>Mr.Fox</span></small></div>
 <header class="head" id="head"></header>
 <div class="searchrow" id="searchrow" hidden><input id="q" type="search" placeholder="Titel, Interpret oder Album" autocomplete="off" aria-label="Suchen"></div>
 <nav class="tabs" id="tabs" role="tablist" aria-label="Ansicht"></nav>
@@ -818,7 +832,7 @@ function renderHead(){
       (info&&info.kind==='pl'?'<button class="ib" data-act="plmenu" aria-label="Playlist-Optionen">'+ic('more',1)+'</button>':'');
     $('#searchrow').hidden=true;
   }else{
-    h.innerHTML='<h1>Fox Musik</h1><button class="ib" data-act="search" aria-pressed="'+searchOpen+'" aria-label="Suchen">'+ic('search')+'</button>'+(isNative()?'<button class="ib" data-act="scan" aria-label="Musik auf dem Handy neu suchen">'+ic('refresh')+'</button>':'')+'<button class="ib" data-act="settings" aria-label="Wiedergabe-Einstellungen">'+ic('sliders')+'</button><button class="ib" data-act="add" aria-label="Songs hinzufügen">'+ic('plus')+'</button>';
+    h.innerHTML='<div class="brand"><h1>Fox Musik</h1><small>Design by <span>Mr.Fox</span></small></div><button class="ib" data-act="search" aria-pressed="'+searchOpen+'" aria-label="Suchen">'+ic('search')+'</button>'+(isNative()?'<button class="ib" data-act="scan" aria-label="Musik auf dem Handy neu suchen">'+ic('refresh')+'</button>':'')+'<button class="ib" data-act="settings" aria-label="Wiedergabe-Einstellungen">'+ic('sliders')+'</button><button class="ib" data-act="add" aria-label="Songs hinzufügen">'+ic('plus')+'</button>';
     $('#searchrow').hidden=!searchOpen;
   }
 }
@@ -1895,6 +1909,7 @@ render();
   ready=true;
   updateTransport();
   render();
+  setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   applyTheme();applySpeed();if(state.skip)silenceInit(audio);
   if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,2500);}
 })();
