@@ -184,6 +184,12 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 .sform input{height:48px;border-radius:14px;border:1px solid var(--line);background:var(--bg);padding:0 16px}
 .sform .btn{margin-top:0}
 .sform .btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.credit{display:flex;flex-direction:column;align-items:center;gap:4px;padding:22px 0 6px;text-align:center}
+.credit-logo{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:4px}
+.credit-logo svg{width:24px;height:24px}
+.credit b{font:700 16px/1.2 var(--font-display)}
+.credit small{color:var(--muted);font-size:13px;letter-spacing:.02em}
+.credit small span{color:var(--accent);font-weight:700}
 .sform .btn.warn{background:var(--danger);color:var(--accent-ink)}
 .toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:50;max-width:calc(100% - 32px);transform:translate(-50%,12px);opacity:0;pointer-events:none;background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:20px;font-weight:500;transition:opacity .2s,transform .2s}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -1546,6 +1552,7 @@ function settingsSheet(){
   h+='<div class="srow"><button class="sleepbtn" data-sa="bkexport"><b>Sicherung erstellen</b><small>Favoriten, Playlists und Zähler als Datei speichern</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="bkimport"><b>Sicherung laden</b><small>Daten aus einer Sicherungsdatei zurückholen</small></button></div>';
   h+='</div>';
+  h+='<div class="credit"><div class="credit-logo">'+ic('note')+'</div><b>Fox Musik</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Design by <span>Mr.Fox</span></small></div>';
   openSheet(h);
 }
 function sleepSheet(){
