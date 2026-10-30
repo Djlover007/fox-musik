@@ -1246,25 +1246,65 @@ function spPlaylistHTML(key){
   return h;
 }
 function spSleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
-async function spDevice(){
-  var d=await spApi('/me/player/devices'), ds=(d&&d.devices)||[];
-  return ds.find(function(x){return x.is_active;})||ds.find(function(x){return x.type==='Smartphone';})||ds[0]||null;
+async function spDevices(){var d=await spApi('/me/player/devices');return ((d&&d.devices)||[]).filter(function(x){return x&&x.id&&!x.is_restricted;});}
+function spPick(ds){return ds.find(function(x){return x.is_active;})||ds.find(function(x){return x.type==='Smartphone';})||ds[0]||null;}
+async function spDevice(){return spPick(await spDevices());}
+var spErr=null;
+function spFail(text,tech){
+  spErr={t:text,m:tech||''};
+  if(document.visibilityState==='visible')spShowErr();
+}
+function spShowErr(){
+  if(!spErr)return;var e=spErr;spErr=null;
+  openSheet('<div class="sform"><h3>Spotify spielt nicht</h3><p style="color:var(--fg)">'+esc(e.t)+'</p>'+(e.m?'<p>Technisch: '+esc(e.m)+'</p>':'')+'<button class="btn" data-sa="cancel">OK</button></div>');
+}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&spErr)setTimeout(spShowErr,400);});
+async function spTryPlay(dev,body){
+  try{
+    await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});
+    return null;
+  }catch(e){
+    if(e&&(e.status===404||e.status===502||e.status===500)){
+      try{
+        await spApi('/me/player',{method:'PUT',body:JSON.stringify({device_ids:[dev.id],play:false})});
+        await spSleep(1200);
+        await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});
+        return null;
+      }catch(e2){return e2;}
+    }
+    return e;
+  }
 }
 async function spPlay(body){
   if(spBusy)return;spBusy=true;
   try{
-    var dev=await spDevice();
-    if(!dev){
-      toast('Starte Spotify …');
-      var P=UPDP();if(P)P.openUrl({url:'spotify:home',fallback:'https://open.spotify.com/'}).catch(function(){});
-      for(var i=0;i<12&&!dev;i++){await spSleep(1500);dev=await spDevice().catch(function(){return null;});}
-      if(!dev){toast('Spotify ist nicht bereit. Öffne die Spotify-App, starte kurz einen Titel und tippe dann hier nochmal.');return;}
-    }
     if(audio&&!audio.paused)audio.pause();
-    await spApi('/me/player/play?device_id='+encodeURIComponent(dev.id),{method:'PUT',body:JSON.stringify(body)});
-    setTimeout(spNowTick,800);
+    var dev=await spDevice(), opened=false;
+    if(!dev){
+      toast('Starte Spotify …',true);
+      var P=UPDP(), target=body.context_uri||(body.uris&&body.uris[0])||'spotify:home';
+      if(P)P.openUrl({url:target,fallback:'https://open.spotify.com/'}).catch(function(){});
+      opened=true;
+      for(var i=0;i<25&&!dev;i++){await spSleep(1200);dev=await spDevice().catch(function(){return null;});}
+      if(!dev){spFail('Die Spotify-App hat sich nicht als Abspielgerät gemeldet. Tippe in Spotify einmal kurz auf Play und dann hier nochmal auf den Titel.','keine Geräte in /me/player/devices');return;}
+      await spSleep(800);
+    }
+    var err=await spTryPlay(dev,body);
+    if(err&&!opened){
+      var ds=await spDevices().catch(function(){return [];}), other=ds.find(function(x){return x.id!==dev.id&&x.type==='Smartphone';});
+      if(other)err=await spTryPlay(other,body);
+    }
+    if(err){
+      var m=spMsg(err);
+      if(err.status===403)spFail(/premium/i.test(m)?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify hat das Abspielen abgelehnt. Ist dein Konto Premium und in deiner Spotify-Entwickler-App freigeschaltet?',m);
+      else if(err.status===404)spFail('Spotify findet kein aktives Gerät. Öffne Spotify, tippe kurz auf Play und versuche es dann nochmal.',m);
+      else spFail('Spotify konnte nicht starten.',m);
+      return;
+    }
+    toast('Spielt in Spotify.');
+    setTimeout(spNowTick,1200);
   }catch(e){
-    toast(e&&e.status===403?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify: '+spMsg(e));
+    spFail(e&&e.status===403?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify konnte nicht starten.',spMsg(e));
   }finally{spBusy=false;}
 }
 function spPlayFrom(key,i){
