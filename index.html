@@ -700,7 +700,7 @@ function plSongs(p){return p.ids.map(byId).filter(Boolean);}
 function detailInfo(){
   var d=view.detail;if(!d)return null;
   if(d.type==='wish')return {name:'Spotify-Wunschliste',songs:[],sub:'',kind:'fav',icon:'listplus'};
-  if(d.type==='spapi')return {name:'Spotify',songs:[],sub:'Spotify',kind:'fav',icon:'list'};
+  if(d.type==='spapi'){var spn=d.key==='liked'?'Lieblingssongs':(((spCache.pls&&spCache.pls.data)||[]).find(function(x){return x&&x.id===d.key;})||{name:'Spotify'}).name;return {name:spn,songs:[],sub:'Spotify',kind:'fav',icon:'list'};}
   if(d.type==='spot')return {name:'Spotify-Playlists',songs:[],sub:'',kind:'fav',icon:'list'};
   if(d.type==='spotpl'){var sp=state.spl.find(function(x){return x.id===d.key;});return sp?{name:sp.name,songs:[],sub:'Spotify',kind:'fav',icon:'list'}:null;}
   if(d.type==='pl'){
@@ -1230,7 +1230,7 @@ function spPlaylistHTML(key){
   var c=spLoad('pl:'+key,async function(){
     var out=[],url=liked?'/me/tracks?limit=50':'/playlists/'+key+'/items?limit=100';
     for(var i=0;i<(liked?4:3)&&url;i++){var j=await spApi(url);out=out.concat((j&&j.items)||[]);url=j&&j.next?j.next.replace('https://api.spotify.com/v1',''):null;}
-    return out.map(function(x){return x&&(x.item||x.track);}).filter(function(t){return t&&t.uri&&t.type!=='episode';});
+    return out.map(function(x,pos){var t=x&&(x.item||x.track);if(t){t._pos=pos;t._uri=(t.linked_from&&t.linked_from.uri)||t.uri;}return t;}).filter(function(t){return t&&t.uri&&t.type!=='episode'&&!t.is_local;});
   });
   var h='<div class="dhead">'+(meta.images?spImg(meta.images).replace('cov rc','cov dc'):'<div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic(liked?'heart':'list',1)+'</div>')+'<div class="dtxt"><h2>'+esc(meta.name)+'</h2><p>Spotify'+(c.data?' · '+c.data.length+' Titel':'')+'</p></div></div>';
   h+='<div id="spNow"></div>';
@@ -1251,6 +1251,7 @@ function spPick(ds){return ds.find(function(x){return x.is_active;})||ds.find(fu
 async function spDevice(){return spPick(await spDevices());}
 var spErr=null;
 function spFail(text,tech){
+  try{clearTimeout(tt);$('#toast').classList.remove('show');}catch(e){}
   spErr={t:text,m:tech||''};
   if(document.visibilityState==='visible')spShowErr();
 }
@@ -1275,7 +1276,9 @@ async function spTryPlay(dev,body){
     return e;
   }
 }
-async function spPlay(body){
+async function spPlay(bodies){
+  if(!Array.isArray(bodies))bodies=[bodies];
+  var body=bodies[0];
   if(spBusy)return;spBusy=true;
   try{
     if(audio&&!audio.paused)audio.pause();
@@ -1290,6 +1293,7 @@ async function spPlay(body){
       await spSleep(800);
     }
     var err=await spTryPlay(dev,body);
+    for(var k=1;err&&err.status!==403&&k<bodies.length;k++){await spSleep(600);err=await spTryPlay(dev,bodies[k]);}
     if(err&&!opened){
       var ds=await spDevices().catch(function(){return [];}), other=ds.find(function(x){return x.id!==dev.id&&x.type==='Smartphone';});
       if(other)err=await spTryPlay(other,body);
@@ -1298,9 +1302,11 @@ async function spPlay(body){
       var m=spMsg(err);
       if(err.status===403)spFail(/premium/i.test(m)?'Spotify erlaubt die Steuerung nur mit Premium.':'Spotify hat das Abspielen abgelehnt. Ist dein Konto Premium und in deiner Spotify-Entwickler-App freigeschaltet?',m);
       else if(err.status===404)spFail('Spotify findet kein aktives Gerät. Öffne Spotify, tippe kurz auf Play und versuche es dann nochmal.',m);
-      else spFail('Spotify konnte nicht starten.',m);
+      else if(err.status>=500)spFail('Spotify hatte einen internen Fehler. Öffne die Spotify-App, tippe dort kurz auf Play und dann hier nochmal auf den Titel. Das „weckt“ Spotify meist auf.',m+' ('+err.status+')');
+      else spFail('Spotify konnte nicht starten.',m+' ('+err.status+')');
       return;
     }
+    try{clearTimeout(tt);}catch(e){}
     toast('Spielt in Spotify.');
     setTimeout(spNowTick,1200);
   }catch(e){
@@ -1308,16 +1314,20 @@ async function spPlay(body){
   }finally{spBusy=false;}
 }
 function spPlayFrom(key,i){
-  var c=spCache['pl:'+key], tracks=(c&&c.data)||[];
+  var c=spCache['pl:'+key], tracks=(c&&c.data)||[], t=(i!=null)?tracks[i]:null;
+  var plays=[];
   if(key!=='liked'){
-    var body={context_uri:'spotify:playlist:'+key};
-    if(i!=null&&tracks[i])body.offset={uri:tracks[i].uri};
-    spPlay(body);return;
+    var ctx='spotify:playlist:'+key;
+    if(t){
+      plays.push({context_uri:ctx,offset:{uri:t._uri||t.uri}});
+      if(t._pos!=null)plays.push({context_uri:ctx,offset:{position:t._pos}});
+    }else plays.push({context_uri:ctx});
   }
-  var uris=tracks.map(function(t){return t.uri;});
-  if(!uris.length){toast('Keine Titel geladen.');return;}
-  var st=Math.max(0,i||0), win=uris.slice(st,st+100);
-  spPlay({uris:win});
+  var uris=tracks.map(function(x){return x.uri;}), st=Math.max(0,i||0);
+  if(uris.length)plays.push({uris:uris.slice(st,st+50)});
+  if(key!=='liked'&&t)plays.push({context_uri:'spotify:playlist:'+key});
+  if(!plays.length){toast('Keine Titel geladen.');return;}
+  spPlay(plays);
 }
 async function spCtl(what){
   try{
