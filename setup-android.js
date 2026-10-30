@@ -77,6 +77,30 @@ if (!xml.includes('foxupdate')) {
 }
 fs.writeFileSync(manifest, xml);
 
+// ---- Fester Signierschlüssel (sonst lehnt Android jedes Update ab) ----
+{
+  const ks = path.join('android', 'app', 'fox-debug.keystore');
+  fs.writeFileSync(ks, Buffer.from(fs.readFileSync('fox-debug.keystore.b64', 'utf8').replace(/\s+/g, ''), 'base64'));
+  const gradle = path.join('android', 'app', 'build.gradle');
+  let g = fs.readFileSync(gradle, 'utf8');
+  if (!g.includes('fox-debug.keystore')) {
+    const block =
+      'android {\n' +
+      '    signingConfigs {\n' +
+      '        debug {\n' +
+      "            storeFile file('fox-debug.keystore')\n" +
+      "            storePassword 'android'\n" +
+      "            keyAlias 'androiddebugkey'\n" +
+      "            keyPassword 'android'\n" +
+      '        }\n' +
+      '    }\n';
+    const g2 = g.replace(/^android\s*\{\s*\n/m, block);
+    if (g2 === g) { console.error('FEHLER: android { } in build.gradle nicht gefunden'); process.exit(1); }
+    fs.writeFileSync(gradle, g2);
+  }
+  console.log('Signierschlüssel fest eingetragen');
+}
+
 const res = path.join('android', 'app', 'src', 'main', 'res');
 fs.mkdirSync(path.join(res, 'xml'), { recursive: true });
 fs.writeFileSync(path.join(res, 'xml', 'fox_paths.xml'),
