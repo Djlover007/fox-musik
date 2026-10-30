@@ -663,7 +663,7 @@ function wireAudio(a){
   a.addEventListener('timeupdate',function(){
     if(a!==audio||!cur)return;
     var d=audio.duration||cur.duration||0, p=d?Math.min(100,audio.currentTime/d*100):0;
-    $('#miniProg').style.width=p+'%';
+    if(!miniSp())$('#miniProg').style.width=p+'%';
     if(!seeking){
       var sk=$('#seek');sk.value=p*10;sk.style.setProperty('--p',p+'%');
       $('#tCur').textContent=fmt(audio.currentTime);
@@ -680,7 +680,7 @@ function wireAudio(a){
     if(cur&&isFinite(audio.duration)&&Math.abs((cur.duration||0)-audio.duration)>1){cur.duration=audio.duration;dbPut('songs',cur);}
     pushNative();
   });
-  a.addEventListener('play',function(){if(a===audio){updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
+  a.addEventListener('play',function(){if(a===audio){srcFoxStarted();updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
   a.addEventListener('pause',function(){if(a===audio){updateTransport();pushNative();}});
   a.addEventListener('ended',function(){if(a===audio)next(true);});
   a.addEventListener('error',function(){if(a===audio&&cur&&cur.url)nwNote('Audio-Fehler Code '+(a.error&&a.error.code)+' '+String(a.currentSrc||'').split('?')[0]);});
@@ -770,16 +770,16 @@ function updateTransport(){
   var pl=!audio.paused;
   document.body.classList.toggle('playing',pl);
   var icn=ic(pl?'pause':'play',1), lbl=pl?'Pause':'Wiedergabe';
-  ['#miniPP','#pPP'].forEach(function(s){var b=$(s);b.innerHTML=icn;b.setAttribute('aria-label',lbl);});
+  (miniSp()?['#pPP']:['#miniPP','#pPP']).forEach(function(s){var b=$(s);b.innerHTML=icn;b.setAttribute('aria-label',lbl);});
   var sh=$('#pShuf');sh.classList.toggle('on',state.shuffle);sh.setAttribute('aria-pressed',state.shuffle);
   var rp=$('#pRep');rp.innerHTML=ic(state.repeat===2?'repeat1':'repeat');rp.classList.toggle('on',state.repeat>0);rp.setAttribute('aria-pressed',state.repeat>0);
 }
 var tintKey='';
 function setTint(c){document.documentElement.style.setProperty('--tint',c);}
-function tintFor(s){
+function tintFor(s,url){
   if(!s)return;var key=s.id;if(key===tintKey)return;tintKey=key;
   var fallback='hsl('+hue(s.album||s.title)+' 45% 30%)';
-  var u=coverURL(s);if(!u){setTint(fallback);return;}
+  var u=url||coverURL(s);if(!u){setTint(fallback);return;}
   var im=new Image();if(/^https?:/.test(u))im.crossOrigin='anonymous';
   im.onload=function(){
     try{
@@ -795,18 +795,21 @@ function tintFor(s){
 }
 function updateNow(){
   var m=$('#mini');
-  if(!cur){m.hidden=true;return;}
+  if(miniSp()){renderSpMini();if(!cur)return;}
+  else if(!cur){m.hidden=true;return;}
+  else{
   m.hidden=false;
   $('#miniCov').innerHTML=coverHTML(cur,'mc');
   $('#miniT').textContent=cur.title;
   $('#miniA').textContent=cur.artist||NOARTIST;
+  }
   $('#pCovWrap').innerHTML=coverHTML(cur,'big');
   $('#pT').textContent=cur.title;
   $('#pA').textContent=(cur.artist||NOARTIST)+(cur.album?' · '+cur.album:'');
   var u=coverURL(cur), bg=$('#pBg');
   bg.style.backgroundImage=u?'url('+u+')':'linear-gradient(160deg,hsl('+hue(cur.album||cur.title)+' 55% 55%),hsl('+(hue(cur.album||cur.title)+40)+' 58% 35%))';
   $('#tDur').textContent=fmt(cur.duration);
-  tintFor(cur);
+  if(!miniSp())tintFor(cur);
   updateFav();updateTransport();renderMain();
 }
 function updateFav(){
@@ -1109,6 +1112,7 @@ function nwStatus(){
 }
 function nwOpen(){
   if(audio&&!audio.paused)audio.pause();
+  spPauseQuiet();
   var P=UPDP();
   if(P&&P.openNeowake){P.openNeowake().catch(function(e){toast('Neowake lässt sich nicht öffnen: '+spMsg(e)+' (App aktualisieren?)');});}
   else window.open('https://app.neowake.de/dashboard/','_blank');
@@ -1306,7 +1310,6 @@ function nwHomeHTML(){
 }
 function homeHTML(){
   var h='<p class="hello">'+greet()+'</p>';
-  if(isNative()&&spOn()){h+='<div id="spNow">'+spLast+'</div>';setTimeout(spNowStart,30);}
   h+='<div class="qgrid">'+
     qTile('open',' data-type="pl" data-key="fav"',qIcon('heart','#ff7a1a','#b8360c'),'Bevorzugte Titel')+
     qTile('open',' data-type="pl" data-key="top"',qIcon('chart','#e2a400','#a3530a'),'Meistgespielt')+
@@ -1839,7 +1842,7 @@ async function spPlay(bodies){
   var body=bodies[0];
   if(spBusy)return;spBusy=true;
   try{
-    if(audio&&!audio.paused)audio.pause();
+    srcSpStarted();
     var dev=await spDevice(), opened=false;
     if(!dev){
       toast('Starte Spotify …',true);
@@ -1881,7 +1884,7 @@ async function spPlay(bodies){
     }
     try{clearTimeout(tt);}catch(e){}
     toast('Spielt in Spotify.');
-    setTimeout(spNowTick,1200);
+    setTimeout(spNowTick,1200);setTimeout(srcTick,1300);
   }catch(e){
     if(!(e&&e.status)){
       await spSleep(1500);
@@ -1912,12 +1915,12 @@ async function spCtl(what){
     if(what==='toggle'){
       var p=await spApi('/me/player');
       if(p&&p.is_playing)await spApi('/me/player/pause',{method:'PUT'});
-      else{if(audio&&!audio.paused)audio.pause();await spApi('/me/player/play',{method:'PUT'});}
+      else{srcSpStarted();await spApi('/me/player/play',{method:'PUT'});}
     }else await spApi('/me/player/'+what,{method:'POST'});
-    setTimeout(spNowTick,600);
+    setTimeout(spNowTick,600);setTimeout(srcTick,700);
   }catch(e){toast(e&&e.status===404?'Keine aktive Spotify-Wiedergabe. Tippe einen Titel an.':'Spotify: '+spMsg(e));}
 }
-function spInView(){return spOn()&&((view.detail&&(view.detail.type==='spot'||view.detail.type==='spapi'))||(!view.detail&&view.tab==='home'));}
+function spInView(){return spOn()&&view.detail&&(view.detail.type==='spot'||view.detail.type==='spapi');}
 function spNowStart(){if(!spInView())return;if(Date.now()-spLastT>1500)spNowTick();if(!spNowT)spNowT=setInterval(function(){if(!spInView()){clearInterval(spNowT);spNowT=null;return;}if(document.visibilityState==='visible')spNowTick();},4000);}
 async function spNowTick(){
   var el=$('#spNow');if(!el)return;spLastT=Date.now();
@@ -2236,10 +2239,10 @@ document.addEventListener('click',function(e){
     case 'more':sctx={};songSheet(el.dataset.id);break;
     case 'newpl':sctx={};newPlSheet();break;
     case 'plmenu':sctx={};openSheet('<div class="shead"><div class="rt"><b>'+esc(detailInfo().name)+'</b></div></div>'+sItem('delpl','trash','Playlist löschen',' danger'));break;
-    case 'openplayer':openPlayer();break;
+    case 'openplayer':if(miniSp())go(function(){view.detail={type:'spot',key:'list'};});else openPlayer();break;
     case 'closeplayer':closePlayer();break;
-    case 'pp':togglePlay();break;
-    case 'next':next(false);break;
+    case 'pp':if(miniSp())spMiniCtl('toggle');else togglePlay();break;
+    case 'next':if(miniSp())spMiniCtl('next');else next(false);break;
     case 'prev':prev();break;
     case 'shuf':toggleShuffle();break;
     case 'rep':cycleRepeat();break;
@@ -2428,6 +2431,73 @@ document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'&&isNative()&&view.tab==='home'&&!view.detail){var fc=nwCache['p:/favoriten/'];if(fc&&!fc.loading&&Date.now()-(fc.t||0)>60000){delete nwCache['p:/favoriten/'];nwSession=null;renderMain();}}
 });
 
+/* ---------- Quelle ---------- */
+/* ---------- Eine Quelle zur Zeit: Fox-Player, Spotify oder Neowake ---------- */
+var src='fox', spNow=null, nwWasPlaying=false, spWasPlaying=false, srcT=null, spMiniT=null, srcBusy=false;
+function miniSp(){return src==='sp'&&!!(spNow&&spNow.item);}
+function spPauseQuiet(){if(spOn()&&spNow&&spNow.is_playing){spNow.is_playing=false;spWasPlaying=false;spApi('/me/player/pause',{method:'PUT'}).catch(function(){});}}
+function nwPauseQuiet(){var P=UPDP();if(P&&P.neowakeControl&&nwWasPlaying){nwWasPlaying=false;P.neowakeControl({cmd:'pause'}).catch(function(){});}}
+function srcFoxStarted(){
+  spPauseQuiet();nwPauseQuiet();
+  if(src!=='fox'){src='fox';tintKey='';if(cur)updateNow();}
+}
+function srcSpStarted(){
+  if(audio&&!audio.paused)audio.pause();
+  nwPauseQuiet();src='sp';
+}
+function spMiniCtl(w){
+  if(spNow&&w==='toggle'){spNow.is_playing=!spNow.is_playing;renderSpMini();}
+  spCtl(w);
+}
+function renderSpMini(){
+  var m=$('#mini'), p=spNow;if(!p||!p.item)return;
+  var t=p.item, imgs=(t.album&&t.album.images)||[], im=(imgs[imgs.length>1?1:0]||{}).url||'';
+  m.hidden=false;
+  $('#miniCov').innerHTML=im?'<div class="cov mc" style="background-image:url(\''+esc(im)+'\')"></div>':'<div class="cov mc tile fav">'+ic('note',1)+'</div>';
+  $('#miniT').textContent=t.name||'';
+  $('#miniA').textContent=(t.artists||[]).map(function(a){return a.name;}).join(', ')+' · Spotify';
+  var b=$('#miniPP');b.innerHTML=ic(p.is_playing?'pause':'play',1);b.setAttribute('aria-label',p.is_playing?'Spotify pausieren':'Spotify abspielen');
+  var pos=(p.progress_ms||0)+(p.is_playing&&p._at?Date.now()-p._at:0), pct=t.duration_ms?Math.min(100,pos/t.duration_ms*100):0;
+  $('#miniProg').style.width=pct.toFixed(1)+'%';
+  tintFor({id:'sp:'+(t.id||t.name),title:t.name||'',album:(t.album&&t.album.name)||''},im);
+  if(p.is_playing&&!spMiniT)spMiniT=setInterval(function(){if(!miniSp()||!spNow.is_playing){clearInterval(spMiniT);spMiniT=null;return;}renderSpMini();},1000);
+}
+async function srcTick(){
+  if(srcBusy||!isNative())return;srcBusy=true;
+  try{
+    // Neowake-Fenster
+    var P=UPDP(), nwPlaying=false;
+    if(P&&P.neowakeState){try{var r=await P.neowakeState();var s=r&&r.state?JSON.parse(r.state):null;nwPlaying=!!(r&&r.open&&s&&s.playing);}catch(e){}}
+    if(nwPlaying&&!nwWasPlaying){nwWasPlaying=true;if(audio&&!audio.paused)audio.pause();spPauseQuiet();}
+    nwWasPlaying=nwPlaying;
+    // Spotify
+    if(spOn()){
+      var p=null;try{p=await spApi('/me/player/currently-playing');}catch(e){p=spNow;}
+      if(p&&p!==spNow)p._at=Date.now();
+      var playing=!!(p&&p.item&&p.is_playing);
+      if(playing&&!spWasPlaying){
+        // Spotify wurde gestartet (auch direkt in der Spotify-App): die anderen pausieren
+        if(audio&&!audio.paused)audio.pause();
+        nwPauseQuiet();src='sp';
+      }
+      spWasPlaying=playing;spNow=p;
+      if(src==='sp'){
+        if(miniSp()){renderSpMini();updateTransport();}
+        else{src='fox';tintKey='';if(cur)updateNow();else $('#mini').hidden=true;}
+      }
+    }
+  }finally{srcBusy=false;}
+}
+function srcStart(){
+  if(srcT)return;
+  setTimeout(srcTick,1500);
+  srcT=setInterval(function(){
+    // Im Vordergrund alle 4 s; im Hintergrund nur, wenn Fox gerade spielt (damit Spotify-Start Fox stoppt)
+    if(document.visibilityState==='visible'||(audio&&!audio.paused))srcTick();
+  },4000);
+}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(srcTick,300);});
+
 /* ---------- start ---------- */
 document.querySelectorAll('[data-ic]').forEach(function(el){el.innerHTML=ic(el.dataset.ic,el.dataset.f);});
 updateTransport();
@@ -2449,7 +2519,7 @@ render();
   setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   try{if(!localStorage.getItem('fox-d2')){localStorage.setItem('fox-d2','1');if(state.theme==='auto'){state.theme='dark';saveState();}}}catch(e){}
   applyTheme();applySpeed();if(state.skip)silenceInit(audio);
-  if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,2500);}
+  if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
 })();
 })();
 </script>
