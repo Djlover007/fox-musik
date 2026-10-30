@@ -394,6 +394,32 @@ public class UpdatePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void neowakeRun(final PluginCall call) {
+        final String code = call.getString("code", "");
+        final int timeout = call.getInt("timeout", 30000);
+        if (!NeowakeActivity.run(code)) {
+            call.reject("Neowake ist nicht offen");
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                long end = System.currentTimeMillis() + timeout;
+                while (NeowakeActivity.result.isEmpty() && System.currentTimeMillis() < end) {
+                    try {
+                        Thread.sleep(250);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+                JSObject o = new JSObject();
+                o.put("result", NeowakeActivity.result);
+                call.resolve(o);
+            }
+        }).start();
+    }
+
+    @PluginMethod
     public void neowakeDiag(final PluginCall call) {
         boolean ok = NeowakeActivity.collectDiag(new Runnable() {
             @Override

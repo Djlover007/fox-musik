@@ -31,6 +31,7 @@ public class NeowakeActivity extends Activity {
     // Bruecke zu Fox Musik: was gerade laeuft + Diagnose
     static volatile String state = "";
     static volatile String diag = "";
+    static volatile String result = "";
     static WeakReference<NeowakeActivity> current = new WeakReference<NeowakeActivity>(null);
 
     static final String BRIDGE_JS =
@@ -58,6 +59,11 @@ public class NeowakeActivity extends Activity {
         public void report(String json) {
             state = json == null ? "" : json;
         }
+
+        @JavascriptInterface
+        public void result(String json) {
+            result = json == null ? "" : json;
+        }
     }
 
     static void control(final String cmd) {
@@ -73,6 +79,24 @@ public class NeowakeActivity extends Activity {
                 }
             }
         });
+    }
+
+    // Fuehrt Code von Fox Musik in der Neowake-Seite aus; das Ergebnis kommt ueber FoxNW.result(...)
+    static boolean run(final String code) {
+        final NeowakeActivity a = current.get();
+        if (a == null || a.web == null) {
+            return false;
+        }
+        result = "";
+        a.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (a.web != null) {
+                    a.web.evaluateJavascript(code, null);
+                }
+            }
+        });
+        return true;
     }
 
     static boolean collectDiag(final Runnable done) {
