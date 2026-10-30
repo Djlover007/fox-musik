@@ -888,7 +888,8 @@ async function checkUpdate(manual){
     var asset=(j.assets||[]).find(function(a){return /\.apk$/i.test(a.name);});
     if(!asset)throw new Error('keine APK im Release');
     if(appVer&&ver>appVer.code){
-      if(!upd||upd.ver!==ver)upd={ver:ver,url:asset.browser_download_url,size:asset.size,done:false};
+      if(!upd||upd.ver!==ver)upd={ver:ver,url:asset.browser_download_url,size:asset.size,done:false,notes:null};
+      if(!upd.notes)upd.notes=await updNotes(repo,appVer.code,ver);
       if(manual){updateSheet();}
       else if(state.autoUpd){autoGet();}
       else toast('Neue Version '+ver+' verfügbar. Einstellungen, App-Update.');
@@ -897,17 +898,35 @@ async function checkUpdate(manual){
     if(manual)toast('Update-Prüfung fehlgeschlagen: '+String((e&&e.message)||e).slice(0,120)+' (Ist das GitHub-Repository öffentlich?)');
   }
 }
-var autoBusy=false;
-function skippedVer(){try{return Number(localStorage.getItem('fox-upd-skip')||0);}catch(e){return 0;}}
+var autoBusy=false, updLater=0;
+function skippedVer(){return updLater;}
+function cleanNotes(b){
+  return String(b||'').split(/\r?\n/).map(function(l){return l.replace(/^[\s*•-]+/,'').trim();})
+    .filter(function(l){return l&&!/^(co-authored-by|claude-session|signed-off-by)\b/i.test(l)&&!/^add files via upload$/i.test(l)&&!/^(update|create) [\w.-]+$/i.test(l)&&!/^https?:\/\//.test(l);});
+}
+async function updNotes(repo,from,to){
+  try{
+    var ctl=new AbortController(), t=setTimeout(function(){ctl.abort();},10000);
+    var r=await fetch('https://api.github.com/repos/'+repo+'/releases?per_page=30',{signal:ctl.signal,headers:{'Accept':'application/vnd.github+json'}});
+    clearTimeout(t);
+    if(!r.ok)return [];
+    var list=await r.json(), out=[], seen={};
+    (list||[]).forEach(function(rel){
+      var m=String(rel.tag_name||'').match(/(\d+)\s*$/), v=m?parseInt(m[1],10):0;
+      if(v>from&&v<=to)cleanNotes(rel.body).forEach(function(l){var k=l.toLowerCase();if(!seen[k]){seen[k]=1;out.push(l);}});
+    });
+    return out;
+  }catch(e){return [];}
+}
 async function autoGet(){
   var P=UPDP();if(!P||!upd||autoBusy)return;
   autoBusy=true;
   try{
     if(!upd.done){await P.download({url:upd.url});upd.done=true;}
-    var open=$('#sheet').classList.contains('open');
     if(skippedVer()!==upd.ver){
-      if(open)toast('Update '+upd.ver+' ist bereit. Einstellungen, App-Update.');
-      else updateSheet();
+      for(var w=0;w<40&&$('#sheet').classList.contains('open');w++)await new Promise(function(r){setTimeout(r,1500);});
+      if(!$('#sheet').classList.contains('open'))updateSheet();
+      else toast('Update '+upd.ver+' ist bereit. Einstellungen, App-Update.');
     }
   }catch(e){}
   autoBusy=false;
@@ -915,14 +934,17 @@ async function autoGet(){
 function autoCheck(){
   if(!state.autoUpd||!isNative())return;
   var t=0;try{t=Number(localStorage.getItem('fox-upd-t')||0);}catch(e){}
-  if(Date.now()-t<30*60000)return;
+  if(Date.now()-t<60000)return;
   try{localStorage.setItem('fox-upd-t',String(Date.now()));}catch(e){}
   checkUpdate(false);
 }
 function updateSheet(){
   var mb=upd.size?' · '+(upd.size/1048576).toFixed(1).replace('.',',')+' MB':'';
-  openSheet('<div class="shead"><div class="rt"><b>Update verfügbar</b></div></div><div class="set">'+
-    '<div class="srow"><b>Version '+upd.ver+'</b><small>Installiert: '+(appVer?appVer.code:'?')+mb+'</small></div>'+
+  var n=upd.notes||[];
+  var notes=n.length?'<div class="srow"><b>Was ist neu</b><ul style="margin:8px 0 0;padding-left:20px;line-height:1.45">'+n.slice(0,15).map(function(l){return '<li style="margin:0 0 6px">'+esc(l)+'</li>';}).join('')+'</ul></div>'
+    :'<div class="srow"><b>Was ist neu</b><small>Kleine Verbesserungen und Fehlerbehebungen</small></div>';
+  openSheet('<div class="shead"><div class="rt"><b>Neues Update bereit</b></div></div><div class="set">'+
+    '<div class="srow"><b>Version '+upd.ver+'</b><small>Installiert: '+(appVer?appVer.code:'?')+mb+'</small></div>'+notes+
     '<button class="sitem" data-sa="updgo"><span>'+(upd.done?'Jetzt installieren':'Jetzt aktualisieren')+'</span></button>'+
     '<button class="sitem" data-sa="updlater"><span>Später</span></button></div>');
 }
@@ -1259,7 +1281,7 @@ function spShowErr(){
   if(!spErr)return;var e=spErr;spErr=null;
   openSheet('<div class="sform"><h3>Spotify spielt nicht</h3><p style="color:var(--fg)">'+esc(e.t)+'</p>'+(e.m?'<p>Technisch: '+esc(e.m)+'</p>':'')+'<button class="btn" data-sa="cancel">OK</button></div>');
 }
-document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&spErr)setTimeout(spShowErr,400);});
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&spErr)setTimeout(spShowErr,400);if(document.visibilityState==='hidden')updLater=0;});
 async function spWake(){
   var P=UPDP();if(!P||!P.spotifyWake)return false;
   try{var r=await P.spotifyWake({key:'play'});return !!(r&&r.installed);}catch(e){return false;}
@@ -1586,7 +1608,7 @@ function handleSheet(act,el){
     case 'themeauto':state.theme='auto';applyTheme();saveState();settingsSheet();break;
     case 'bkexport':exportBackup();break;
     case 'bkimport':importBackup();break;
-    case 'updlater':try{localStorage.setItem('fox-upd-skip',String(upd?upd.ver:0));}catch(e){}closeSheet();break;
+    case 'updlater':updLater=upd?upd.ver:0;closeSheet();break;
     case 'sleepmenu':sleepSheet();break;
     case 'sleepset':{
       var v=el.dataset.v;sleep.track=false;sleep.end=0;
@@ -1867,7 +1889,7 @@ render();
   updateTransport();
   render();
   applyTheme();applySpeed();if(state.skip)silenceInit(audio);
-  if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,5000);}
+  if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,2500);}
 })();
 })();
 </script>

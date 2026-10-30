@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -49,9 +51,19 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
+      - name: Änderungen sammeln
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'build-*' HEAD 2>/dev/null || true)
+          if [ -n "$prev" ]; then range="$prev..HEAD"; else range="-5"; fi
+          git log $range --no-merges --format='%s' \
+            | grep -v -i -E '^(add files via upload|update [a-z0-9._-]+|create [a-z0-9._-]+)$' \
+            | sed 's/^/- /' > notes.md || true
+          [ -s notes.md ] || echo "- Kleine Verbesserungen und Fehlerbehebungen" > notes.md
+          cat notes.md
       - name: APK veröffentlichen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Fox Musik ${{ github.run_number }}
+          body_path: notes.md
           files: android/app/build/outputs/apk/debug/app-debug.apk
