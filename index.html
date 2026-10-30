@@ -479,6 +479,16 @@ function decText(d){
   else if(enc===3)label='utf-8';
   try{return new TextDecoder(label).decode(b).split('\0')[0].trim();}catch(e){return '';}
 }
+function decComm(d){
+  try{
+    var enc=d[0], i=4, wide=(enc===1||enc===2);
+    if(wide){while(i+1<d.length&&!(d[i]===0&&d[i+1]===0))i+=2;i+=2;}else{while(i<d.length&&d[i]!==0)i++;i++;}
+    var b=new Uint8Array(1+d.length-i);b[0]=enc;b.set(d.subarray(i),1);
+    var label='iso-8859-1', body=b.subarray(1);
+    if(enc===1)label=(body[0]===0xFE&&body[1]===0xFF)?'utf-16be':'utf-16le';else if(enc===2)label='utf-16be';else if(enc===3)label='utf-8';
+    return new TextDecoder(label).decode(body).replace(/\u0000+$/,'').trim();
+  }catch(e){return '';}
+}
 function decPic(d){
   var enc=d[0], i=1;
   while(i<d.length&&d[i]!==0)i++;
@@ -508,6 +518,7 @@ async function readTags(file){
       else if(id==='TPE1')out.artist=decText(d);
       else if(id==='TALB')out.album=decText(d);
       else if(id==='APIC'&&!out.cover)out.cover=decPic(d);
+      else if(id==='COMM'&&!out.desc)out.desc=decComm(d);
       p+=10+fs;
     }
   }catch(e){}
@@ -1236,7 +1247,9 @@ async function nwDlNext(){
   if(nwDlBusy)return;var id=nwDlQ.shift();if(!id)return;
   nwDlBusy=true;var s=byId(id), P=UPDP();
   try{
-    await P.neowakeDownload({url:s.url,id:id,name:s.title,album:s.album||'Neowake'});
+    var ad=(nwCache['d:'+s.albumId]&&nwCache['d:'+s.albumId].data)||'';
+    var ds=s.desc&&ad&&s.desc!==ad?s.desc+'\n\n'+ad:(s.desc||ad);
+    await P.neowakeDownload({url:s.url,id:id,name:s.title,album:s.album||'Neowake',artist:s.artist||'Neowake',desc:ds,cover:s.coverUrl||''});
     state.nwDl[nwDlKey(s)]=Date.now();saveState();
     nwNote('Download fertig: '+s.title);
     if(!nwDlQ.length){toast('Download fertig. Die Titel findest du auch in deiner Bibliothek.');setTimeout(function(){scanDevice(false);},1500);}
@@ -1545,7 +1558,7 @@ function songSheet(id){
   h+=sItem('addpl','listplus','Zu Playlist hinzufügen');
   h+=sItem('fav','heart',isFav?'Aus Favoriten entfernen':'Zu Favoriten hinzufügen');
   if(s.url&&isNative())h+=sItem('nwdl2','dl',nwIsDl(s)?'Schon heruntergeladen':'Herunterladen');
-  if(s.url&&(s.desc||(nwCache['d:'+s.albumId]&&nwCache['d:'+s.albumId].data)))h+=sItem('nwinfo2','info','Beschreibung anzeigen');
+  if(s.desc||(s.url&&nwCache['d:'+s.albumId]&&nwCache['d:'+s.albumId].data))h+=sItem('nwinfo2','info','Beschreibung anzeigen');
   h+=sItem('spot','search','In Spotify suchen');
   if(view.detail&&view.detail.type==='pl'&&state.playlists.some(function(p){return p.id===view.detail.key;}))h+=sItem('rmpl','trash','Aus dieser Playlist entfernen');
   if(!s.url)h+=sItem('del','trash','Aus der App löschen',' danger');
@@ -2601,6 +2614,7 @@ async function deviceCover(s){
     if(u[0]!==0x49||u[1]!==0x44||u[2]!==0x33)return null;
     var size=((u[6]<<21)|(u[7]<<14)|(u[8]<<7)|u[9])+10;
     var t=await readTags(await fetchHead(url,Math.min(size,6*1024*1024)));
+    if(t.desc&&!s.desc)s.desc=t.desc;
     return t.cover||null;
   }catch(e){return null;}
 }
@@ -2611,7 +2625,7 @@ async function coverJob(){
     var cache=new Map();
     var todo=songs.filter(function(s){return s.device&&!s.cover&&!s.coverTried;});
     for(var i=0;i<todo.length;i++){
-      var s=todo[i], ak=s.album?(s.album+'|'+s.artist):'', blob;
+      var s=todo[i], ak=(s.album&&!/\/Neowake\//.test(s.path||''))?(s.album+'|'+s.artist):'', blob;
       if(ak&&cache.has(ak))blob=cache.get(ak);
       else{blob=await deviceCover(s);if(ak)cache.set(ak,blob);}
       s.coverTried=true;

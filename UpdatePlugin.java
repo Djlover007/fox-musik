@@ -488,6 +488,11 @@ public class UpdatePlugin extends Plugin {
         final String id = call.getString("id", "");
         final String name = clean(call.getString("name", "Neowake"));
         final String album = clean(call.getString("album", "Neowake"));
+        final String tagTitle = call.getString("name", "");
+        final String tagAlbum = call.getString("album", "");
+        final String tagArtist = call.getString("artist", "Neowake");
+        final String tagDesc = call.getString("desc", "");
+        final String coverUrl = call.getString("cover", "");
         if (url == null || !url.startsWith("https://")) {
             call.reject("Ungueltige Adresse");
             return;
@@ -564,8 +569,11 @@ public class UpdatePlugin extends Plugin {
                     long got = 0;
                     int n;
                     int last = -1;
+                    boolean tag = ext.equals("mp3");
+                    File tmp = tag ? new File(ctx.getCacheDir(), "nw-dl-" + System.nanoTime() + ".mp3") : null;
+                    OutputStream sink = tag ? new FileOutputStream(tmp) : os;
                     while ((n = in.read(buf)) > 0) {
-                        os.write(buf, 0, n);
+                        sink.write(buf, 0, n);
                         got += n;
                         if (total > 0) {
                             int pct = (int) (got * 100 / total);
@@ -579,6 +587,36 @@ public class UpdatePlugin extends Plugin {
                         }
                     }
                     in.close();
+                    if (tag) {
+                        sink.close();
+                        byte[] coverJpg = fetchCover(ctx, coverUrl);
+                        os.write(buildId3(tagTitle, tagArtist, tagAlbum, tagDesc, coverJpg));
+                        java.io.FileInputStream fin = new java.io.FileInputStream(tmp);
+                        byte[] head = new byte[10];
+                        int hr = fin.read(head);
+                        long skip = 0;
+                        if (hr == 10 && head[0] == 'I' && head[1] == 'D' && head[2] == '3') {
+                            skip = 10 + (((head[6] & 0x7f) << 21) | ((head[7] & 0x7f) << 14) | ((head[8] & 0x7f) << 7) | (head[9] & 0x7f));
+                            if ((head[5] & 0x10) != 0) {
+                                skip += 10;
+                            }
+                        }
+                        fin.close();
+                        fin = new java.io.FileInputStream(tmp);
+                        long sk = skip;
+                        while (sk > 0) {
+                            long s2 = fin.skip(sk);
+                            if (s2 <= 0) {
+                                break;
+                            }
+                            sk -= s2;
+                        }
+                        while ((n = fin.read(buf)) > 0) {
+                            os.write(buf, 0, n);
+                        }
+                        fin.close();
+                        tmp.delete();
+                    }
                     os.close();
                     if (got < 20000) {
                         throw new Exception("Datei zu klein (" + got + " Bytes)");
@@ -610,6 +648,113 @@ public class UpdatePlugin extends Plugin {
                 }
             }
         }).start();
+    }
+
+    // Cover laden und als JPEG (max. 700 px) zurueckgeben
+    private static byte[] fetchCover(Context ctx, String url) {
+        if (url == null || !url.startsWith("https://")) {
+            return null;
+        }
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url).openConnection();
+            c.setInstanceFollowRedirects(true);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(20000);
+            if (NeowakeActivity.isNeowake(url)) {
+                String ck = CookieManager.getInstance().getCookie(url);
+                if (ck != null) {
+                    c.setRequestProperty("Cookie", ck);
+                }
+            }
+            if (c.getResponseCode() != 200) {
+                return null;
+            }
+            InputStream in = c.getInputStream();
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[32768];
+            int n;
+            while ((n = in.read(buf)) > 0 && bo.size() < 8 * 1024 * 1024) {
+                bo.write(buf, 0, n);
+            }
+            in.close();
+            byte[] raw = bo.toByteArray();
+            android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.length);
+            if (bm == null) {
+                return null;
+            }
+            int max = Math.max(bm.getWidth(), bm.getHeight());
+            if (max > 700) {
+                float k = 700f / max;
+                bm = android.graphics.Bitmap.createScaledBitmap(bm, Math.round(bm.getWidth() * k), Math.round(bm.getHeight() * k), true);
+            }
+            java.io.ByteArrayOutputStream jo = new java.io.ByteArrayOutputStream();
+            bm.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, jo);
+            return jo.toByteArray();
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (c != null) {
+                c.disconnect();
+            }
+        }
+    }
+
+    // ID3v2.3-Tag mit Titel, Interpret, Album, Beschreibung (COMM) und Cover (APIC)
+    static byte[] buildId3(String title, String artist, String album, String desc, byte[] cover) throws Exception {
+        java.io.ByteArrayOutputStream f = new java.io.ByteArrayOutputStream();
+        textFrame(f, "TIT2", title);
+        textFrame(f, "TPE1", artist);
+        textFrame(f, "TALB", album);
+        if (desc != null && desc.trim().length() > 0) {
+            String d = desc.length() > 6000 ? desc.substring(0, 6000) : desc;
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+            b.write(1);
+            b.write(new byte[] { 'd', 'e', 'u' });
+            b.write(new byte[] { (byte) 0xFF, (byte) 0xFE, 0, 0 });
+            b.write(new byte[] { (byte) 0xFF, (byte) 0xFE });
+            b.write(d.getBytes("UTF-16LE"));
+            frame(f, "COMM", b.toByteArray());
+        }
+        if (cover != null && cover.length > 0) {
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+            b.write(0);
+            b.write("image/jpeg".getBytes("ISO-8859-1"));
+            b.write(0);
+            b.write(3);
+            b.write(0);
+            b.write(cover);
+            frame(f, "APIC", b.toByteArray());
+        }
+        byte[] frames = f.toByteArray();
+        int size = frames.length + 512;
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.write(new byte[] { 'I', 'D', '3', 3, 0, 0 });
+        out.write((size >> 21) & 0x7f);
+        out.write((size >> 14) & 0x7f);
+        out.write((size >> 7) & 0x7f);
+        out.write(size & 0x7f);
+        out.write(frames);
+        out.write(new byte[512]);
+        return out.toByteArray();
+    }
+
+    private static void textFrame(java.io.ByteArrayOutputStream f, String id, String text) throws Exception {
+        if (text == null || text.trim().isEmpty()) {
+            return;
+        }
+        java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+        b.write(1);
+        b.write(new byte[] { (byte) 0xFF, (byte) 0xFE });
+        b.write(text.trim().getBytes("UTF-16LE"));
+        frame(f, id, b.toByteArray());
+    }
+
+    private static void frame(java.io.ByteArrayOutputStream f, String id, byte[] data) throws Exception {
+        f.write(id.getBytes("ISO-8859-1"));
+        int n = data.length;
+        f.write(new byte[] { (byte) (n >>> 24), (byte) (n >>> 16), (byte) (n >>> 8), (byte) n, 0, 0 });
+        f.write(data);
     }
 
     private static String clean(String s) {
