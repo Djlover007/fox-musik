@@ -481,6 +481,148 @@ public class UpdatePlugin extends Plugin {
         }).start();
     }
 
+    // Laedt einen Neowake-Titel herunter und legt ihn im Musik-Ordner unter "Neowake" ab.
+    @PluginMethod
+    public void neowakeDownload(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final String id = call.getString("id", "");
+        final String name = clean(call.getString("name", "Neowake"));
+        final String album = clean(call.getString("album", "Neowake"));
+        if (url == null || !url.startsWith("https://")) {
+            call.reject("Ungueltige Adresse");
+            return;
+        }
+        final Context ctx = getContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection c = null;
+                Uri item = null;
+                try {
+                    String cur = url;
+                    int status = 0;
+                    for (int hop = 0; hop < 6; hop++) {
+                        c = (HttpURLConnection) new URL(cur).openConnection();
+                        c.setInstanceFollowRedirects(false);
+                        c.setConnectTimeout(20000);
+                        c.setReadTimeout(60000);
+                        String ua = android.webkit.WebSettings.getDefaultUserAgent(ctx);
+                        c.setRequestProperty("User-Agent", ua == null ? "Mozilla/5.0" : ua.replace("; wv", ""));
+                        if (NeowakeActivity.isNeowake(cur)) {
+                            String ck = CookieManager.getInstance().getCookie(cur);
+                            if (ck != null) {
+                                c.setRequestProperty("Cookie", ck);
+                            }
+                            c.setRequestProperty("Referer", "https://app.neowake.de/");
+                        }
+                        status = c.getResponseCode();
+                        if (status >= 300 && status < 400 && c.getHeaderField("Location") != null) {
+                            cur = new URL(new URL(cur), c.getHeaderField("Location")).toString();
+                            c.disconnect();
+                            continue;
+                        }
+                        break;
+                    }
+                    if (status != 200) {
+                        call.reject("Neowake antwortet mit " + status);
+                        return;
+                    }
+                    String type = c.getContentType() == null ? "" : c.getContentType().toLowerCase();
+                    if (type.contains("text/html")) {
+                        call.reject("Neowake hat statt der Datei eine Webseite geschickt (angemeldet?)");
+                        return;
+                    }
+                    String path = Uri.parse(cur).getPath() == null ? "" : Uri.parse(cur).getPath().toLowerCase();
+                    String ext = path.endsWith(".m4a") ? "m4a" : path.endsWith(".wav") ? "wav" : path.endsWith(".ogg") ? "ogg" : path.endsWith(".flac") ? "flac" : "mp3";
+                    String mime = ext.equals("m4a") ? "audio/mp4" : ext.equals("wav") ? "audio/wav" : ext.equals("ogg") ? "audio/ogg" : ext.equals("flac") ? "audio/flac" : "audio/mpeg";
+                    String file = name + "." + ext;
+                    OutputStream os;
+                    File legacy = null;
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        ContentValues v = new ContentValues();
+                        v.put(MediaStore.Audio.Media.DISPLAY_NAME, file);
+                        v.put(MediaStore.Audio.Media.MIME_TYPE, mime);
+                        v.put(MediaStore.Audio.Media.TITLE, name);
+                        v.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Neowake/" + album);
+                        v.put(MediaStore.Audio.Media.IS_MUSIC, 1);
+                        v.put(MediaStore.Audio.Media.IS_PENDING, 1);
+                        item = ctx.getContentResolver().insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
+                        if (item == null) {
+                            call.reject("Speichern nicht moeglich");
+                            return;
+                        }
+                        os = ctx.getContentResolver().openOutputStream(item);
+                    } else {
+                        File dir = new File(ctx.getExternalFilesDir(Environment.DIRECTORY_MUSIC), "Neowake/" + album);
+                        dir.mkdirs();
+                        legacy = new File(dir, file);
+                        os = new FileOutputStream(legacy);
+                    }
+                    long total = c.getContentLength();
+                    InputStream in = c.getInputStream();
+                    byte[] buf = new byte[65536];
+                    long got = 0;
+                    int n;
+                    int last = -1;
+                    while ((n = in.read(buf)) > 0) {
+                        os.write(buf, 0, n);
+                        got += n;
+                        if (total > 0) {
+                            int pct = (int) (got * 100 / total);
+                            if (pct != last && pct % 5 == 0) {
+                                last = pct;
+                                JSObject p = new JSObject();
+                                p.put("id", id);
+                                p.put("percent", pct);
+                                notifyListeners("nwDownload", p);
+                            }
+                        }
+                    }
+                    in.close();
+                    os.close();
+                    if (got < 20000) {
+                        throw new Exception("Datei zu klein (" + got + " Bytes)");
+                    }
+                    if (item != null) {
+                        ContentValues done = new ContentValues();
+                        done.put(MediaStore.Audio.Media.IS_PENDING, 0);
+                        ctx.getContentResolver().update(item, done, null, null);
+                    } else if (legacy != null) {
+                        android.media.MediaScannerConnection.scanFile(ctx, new String[] { legacy.getAbsolutePath() }, new String[] { mime }, null);
+                    }
+                    JSObject r = new JSObject();
+                    r.put("size", got);
+                    r.put("file", file);
+                    call.resolve(r);
+                } catch (Exception e) {
+                    if (item != null) {
+                        try {
+                            ctx.getContentResolver().delete(item, null, null);
+                        } catch (Exception ignore) {
+                            // ignore
+                        }
+                    }
+                    call.reject(String.valueOf(e.getMessage()));
+                } finally {
+                    if (c != null) {
+                        c.disconnect();
+                    }
+                }
+            }
+        }).start();
+    }
+
+    private static String clean(String s) {
+        if (s == null) {
+            return "Neowake";
+        }
+        String t = s.replaceAll("[\\\\/:*?\"<>|\\n\\r\\t]", " ").replaceAll("\\s+", " ").trim();
+        if (t.length() > 80) {
+            t = t.substring(0, 80).trim();
+        }
+        return t.isEmpty() ? "Neowake" : t;
+    }
+
     @PluginMethod
     public void neowakeState(PluginCall call) {
         JSObject o = new JSObject();
