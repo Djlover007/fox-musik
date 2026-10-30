@@ -71,6 +71,11 @@ svg.i.f{fill:currentColor;stroke:none}
 .nw-ctl{display:flex;align-items:center;gap:2px}
 .nw-ctl .ib{font-weight:700;font-size:13px;color:var(--accent)}
 .nw-ctl .nw-pp{background:var(--accent);color:var(--accent-ink)}
+.nw-h2{margin:22px 0 2px;font:700 22px/1.2 var(--font-display)}
+.nw-sub{margin:0 0 4px;color:var(--muted);font-size:14px}
+.nw-h{margin:16px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.nw-grid{display:flex;flex-wrap:wrap;gap:8px}
+.nw-chip{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:10px 14px;font-weight:600;font-size:14px;color:var(--fg)}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
 .nw-help ol{margin:8px 0 10px;padding-left:20px;line-height:1.5}
@@ -366,7 +371,8 @@ var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
 var audioUrl='', seeking=false, sctx={};
 var covUrls=new Map();
-var byId=function(id){for(var i=0;i<songs.length;i++){if(songs[i].id===id)return songs[i];}return null;};
+var extSongs={};
+var byId=function(id){for(var i=0;i<songs.length;i++){if(songs[i].id===id)return songs[i];}return extSongs[id]||null;};
 var saveState=function(){dbPut('meta',state,'state');};
 
 /* ---------- ID3 tags ---------- */
@@ -445,6 +451,7 @@ async function addFiles(files){
 /* ---------- covers ---------- */
 function hue(seed){var h=0,t=String(seed||'x');for(var i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))%360;return h;}
 function coverURL(s){
+  if(s&&!s.cover&&s.coverUrl)return s.coverUrl;
   if(!s||!s.cover)return '';
   var u=covUrls.get(s.id);
   if(!u){u=URL.createObjectURL(s.cover);covUrls.set(s.id,u);}
@@ -490,7 +497,8 @@ function loadSong(s,fx){
     if(audio._url){URL.revokeObjectURL(audio._url);audio._url='';}
   }
   audio._counted=false;
-  if(s.device){audio.src=devUrl(s);}
+  if(s.url){audio.src=s.url;}
+  else if(s.device){audio.src=devUrl(s);}
   else{audio._url=URL.createObjectURL(s.blob);audio.src=audio._url;}
   applySpeed();
   if(old){
@@ -588,7 +596,7 @@ function wireAudio(a){
   a.addEventListener('play',function(){if(a===audio){updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
   a.addEventListener('pause',function(){if(a===audio){updateTransport();pushNative();}});
   a.addEventListener('ended',function(){if(a===audio)next(true);});
-  a.addEventListener('error',function(){if(a===audio&&cur)toast('Dieser Titel lässt sich nicht abspielen.');});
+  a.addEventListener('error',function(){if(a===audio&&cur)toast(cur.url?'Dieser Neowake-Titel lässt sich in Fox Musik nicht abspielen. Nutze „In Neowake öffnen“ und schick Claude die Diagnose.':'Dieser Titel lässt sich nicht abspielen.');});
   if(state.skip)silenceInit(a);
 }
 audio=newAudio();
@@ -740,6 +748,8 @@ function plSongs(p){return p.ids.map(byId).filter(Boolean);}
 function detailInfo(){
   var d=view.detail;if(!d)return null;
   if(d.type==='wish')return {name:'Spotify-Wunschliste',songs:[],sub:'',kind:'fav',icon:'listplus'};
+  if(d.type==='nwp')return {name:nwName(d.key),songs:[],sub:'Neowake',kind:'fav',icon:'list'};
+  if(d.type==='nwa'){var nm=nwCache['a:'+d.key+':meta'];return {name:nm?nm.title:'Neowake',songs:[],sub:'Neowake',kind:'fav',icon:'note'};}
   if(d.type==='spapi'){var spn=d.key==='liked'?'Lieblingssongs':(((spCache.pls&&spCache.pls.data)||[]).find(function(x){return x&&x.id===d.key;})||{name:'Spotify'}).name;return {name:spn,songs:[],sub:'Spotify',kind:'fav',icon:'list'};}
   if(d.type==='spot')return {name:'Spotify-Playlists',songs:[],sub:'',kind:'fav',icon:'list'};
   if(d.type==='spotpl'){var sp=state.spl.find(function(x){return x.id===d.key;});return sp?{name:sp.name,songs:[],sub:'Spotify',kind:'fav',icon:'list'}:null;}
@@ -815,6 +825,8 @@ function detailHTML(){
   if(view.detail&&view.detail.type==='spot')return spotListHTML();
   if(view.detail&&view.detail.type==='spotpl')return spotEmbedHTML(view.detail.key);
   if(view.detail&&view.detail.type==='spapi')return spPlaylistHTML(view.detail.key);
+  if(view.detail&&view.detail.type==='nwp')return nwPageHTML(view.detail.key);
+  if(view.detail&&view.detail.type==='nwa')return nwAlbumHTML(view.detail.key);
   var info=detailInfo();
   if(!info){view.detail=null;return '';}
   var fc=firstCover(info.songs), cov;
@@ -827,6 +839,143 @@ function detailHTML(){
   }
   return h+barHTML(info.songs.length)+rowsHTML(info.songs);
 }
+/* ---------- Neowake-Bibliothek in Fox Musik ---------- */
+var NW_BASE='https://app.neowake.de';
+var NW_MENU=[
+  ['Kategorien',[['Schlaf','/kategorie-schlaf/'],['Meditation','/kategorie-meditation/'],['Entspannung','/kategorie-entspannung/'],['Selbstfindung','/kategorie-selbstfindung/'],['Energie','/kategorie-energie/']]],
+  ['Alben',[['Source Code','/source-code/'],['Love Code','/love-code/'],['Sleep Code','/sleep-code/'],['SOUL ID','/soul-id/'],['Longevity Code','/longevity-code/']]],
+  ['Collections',[['Digital Highs','/kategorie-digital-highs-collection/'],['Digital Molecules','/kategorie-digital-molecules-collection/'],['Emo-Sync','/kategorie-emo-sync/'],['Mind-Mastery','/kategorie-mind-mastery/'],['Organum Tunes','/kategorie-organum-tunes-collection/'],['Panacea','/panacea/'],['Resonance','/kategorie-resonance-collection/'],['Runes','/runes-collection/'],['Sleep Ambience','/kategorie-sleep-ambience-collection/'],['Zodiac','/kategorie-zodiac/'],['Weitere Collections','/weitere-collections/']]],
+  ['Mehr',[['Playlists','/playlists/'],['Favoriten','/favoriten/']]]
+];
+var nwCache={}, nwLog=[];
+function nwAbs(u){try{return new URL(u,NW_BASE+'/').toString();}catch(e){return '';}}
+function nwName(path){for(var i=0;i<NW_MENU.length;i++)for(var k=0;k<NW_MENU[i][1].length;k++)if(NW_MENU[i][1][k][1]===path)return NW_MENU[i][1][k][0];return 'Neowake';}
+function nwNote(s){nwLog.push(new Date().toISOString().slice(11,19)+' '+String(s).replace(/([?&](?:token|key|sig|signature|expires|nonce|_wpnonce|security)=)[^&\s"]+/gi,'$1…').slice(0,300));if(nwLog.length>60)nwLog.shift();}
+async function nwFetch(path,opt){
+  var P=UPDP();if(!P||!P.neowakeFetch)throw new Error('App aktualisieren');
+  opt=opt||{};
+  var r=await P.neowakeFetch({url:nwAbs(path),probe:!!opt.probe,cookies:opt.cookies!==false});
+  nwNote((opt.probe?'PROBE ':'GET ')+String(nwAbs(path)).split('?')[0]+' -> '+r.status+' '+(r.type||'')+' '+((r.text||'').length)+'B');
+  return r;
+}
+function nwLoad(key,fn){
+  if(nwCache[key])return nwCache[key];
+  nwCache[key]={loading:true};
+  fn().then(function(v){nwCache[key]={data:v};renderMain();renderHead();}).catch(function(e){nwNote('FEHLER '+key+': '+spMsg(e));nwCache[key]={err:spMsg(e)};renderMain();});
+  return nwCache[key];
+}
+function nwDecode(s){var t=document.createElement('textarea');t.innerHTML=String(s||'');return t.value;}
+function nwSlug(s){return String(s||'').replace(/[-_]+/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});}
+async function nwAlbumsFromPage(path){
+  var r=await nwFetch(path);
+  if(r.status>=400)throw new Error('Neowake antwortet mit '+r.status);
+  var doc=new DOMParser().parseFromString(r.text||'','text/html');
+  if(doc.querySelector('.ps-js-form-login,#loginform')&&!doc.querySelector('li.filterall,.esg-grid li'))nwNote('Seite zeigt Login-Formular');
+  var items=[], seen={};
+  [].slice.call(doc.querySelectorAll('li.filterall[data-id], .esg-grid li[data-id], li[class*="eg-"][data-id]')).forEach(function(li){
+    var id=li.getAttribute('data-id');if(!id||seen[id])return;seen[id]=1;
+    var a=[].slice.call(li.querySelectorAll('a[href]')).map(function(x){return x.getAttribute('href');}).filter(function(x){return x&&x.indexOf('#')!==0&&!/javascript:/i.test(x);})[0]||'';
+    var img=li.querySelector('img');var cover=img?(img.getAttribute('data-lazysrc')||img.getAttribute('data-src')||img.getAttribute('src')||''):'';
+    var title='';
+    [].slice.call(li.querySelectorAll('[class*="element"],h1,h2,h3,h4,.esg-content')).some(function(e){var t=(e.textContent||'').trim();if(t&&t.length<120&&!/^(play|anhören|details|mehr)$/i.test(t)){title=t;return true;}return false;});
+    if(!title&&img)title=img.getAttribute('alt')||'';
+    if(!title)title=nwSlug(li.getAttribute('data-title'));
+    items.push({id:id,title:nwDecode(title),link:a?nwAbs(a):'',cover:cover&&!/^data:/.test(cover)?nwAbs(cover):''});
+  });
+  // weitere Kacheln, die Essential Grid erst beim Scrollen nachlädt
+  var more=[], m=(r.text||'').match(/loadMoreItems\s*:\s*\[([\s\S]*?)\]\s*\]\s*[,}]/);
+  if(m){(m[1].match(/\[\s*(\d+)\s*,/g)||[]).forEach(function(x){var id=x.replace(/\D/g,'');if(id&&!seen[id]){seen[id]=1;more.push(id);}});}
+  for(var i=0;i<more.length;i+=50){
+    try{
+      var r2=await nwFetch('/wp-json/wp/v2/album?per_page=50&_embed=1&include='+more.slice(i,i+50).join(','));
+      var arr=JSON.parse(r2.text||'[]');
+      (Array.isArray(arr)?arr:[]).forEach(function(p){
+        var fm=p._embedded&&p._embedded['wp:featuredmedia']&&p._embedded['wp:featuredmedia'][0];
+        var sz=fm&&fm.media_details&&fm.media_details.sizes, cov=(sz&&(sz.medium||sz.thumbnail)&&(sz.medium||sz.thumbnail).source_url)||(fm&&fm.source_url)||'';
+        items.push({id:String(p.id),title:nwDecode(p.title&&p.title.rendered),link:p.link||'',cover:cov});
+      });
+    }catch(e){nwNote('REST-Nachladen fehlgeschlagen: '+spMsg(e));}
+  }
+  return items;
+}
+function nwTrackList(arr,album){
+  return (arr||[]).map(function(t,i){
+    var url=t.mp3||t.audioPath||t.audio||t.file||t.src||t.url||'';
+    if(typeof url==='object'&&url)url=url.url||url.src||'';
+    var dur=0, L=String(t.lenght||t.length||t.duration||'');var mm=L.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);if(mm)dur=mm[3]?(+mm[1])*3600+(+mm[2])*60+(+mm[3]):(+mm[1])*60+(+mm[2]);
+    return {title:nwDecode(t.track_title||t.title||t.name||('Titel '+(i+1))),artist:nwDecode(t.track_artist||t.album_artist||t.artist||'Neowake'),url:url?nwAbs(nwDecode(url)):'',cover:t.poster||t.track_image||t.image||album.cover||'',dur:dur};
+  }).filter(function(t){return t.url&&/^https:/.test(t.url);});
+}
+async function nwTracks(album){
+  // 1) Sonaar-Playlist-Feed
+  try{
+    var r=await nwFetch('/?load=playlist.json&title=&albums='+encodeURIComponent(album.id)+'&feed_title=&feed=&el_widget_id=');
+    var j=null;try{j=JSON.parse(r.text||'');}catch(e){nwNote('playlist.json ist kein JSON: '+String(r.text||'').slice(0,80).replace(/\s+/g,' '));}
+    if(j){var tr=nwTrackList(j.tracks||j.playlist||(Array.isArray(j)?j:[]),album);nwNote('playlist.json Titel: '+tr.length+' Schlüssel: '+Object.keys(j).slice(0,8).join(','));if(tr.length)return tr;}
+  }catch(e){nwNote('playlist.json Fehler: '+spMsg(e));}
+  // 2) Album-Seite selbst durchsuchen
+  if(album.link){
+    try{
+      var r2=await nwFetch(album.link), t=r2.text||'';
+      var doc=new DOMParser().parseFromString(t,'text/html'), out=[];
+      [].slice.call(doc.querySelectorAll('[data-audiopath],[data-src$=".mp3"],audio source[src],audio[src]')).forEach(function(e,i){
+        var u=e.getAttribute('data-audiopath')||e.getAttribute('data-src')||e.getAttribute('src');
+        out.push({title:nwDecode(e.getAttribute('data-tracktitle')||e.getAttribute('title')||(e.textContent||'').trim()||('Titel '+(i+1))),artist:'Neowake',url:nwAbs(u),cover:album.cover,dur:0});
+      });
+      if(!out.length){
+        var re=/https?:\\?\/\\?\/[^"'\s<>]+?\.(?:mp3|m4a|ogg|wav|aac)(?:\?[^"'\s<>]*)?/gi, seen={};
+        (t.match(re)||[]).forEach(function(u){u=u.replace(/\\\//g,'/');if(/beep\.wav/.test(u)||seen[u])return;seen[u]=1;out.push({title:nwSlug(decodeURIComponent(u.split('?')[0].split('/').pop().replace(/\.\w+$/,''))),artist:'Neowake',url:u,cover:album.cover,dur:0});});
+      }
+      var ids=(t.match(/data-albums="([\d,]+)"/)||[])[1];
+      if(!out.length&&ids&&ids!==album.id){nwNote('Album-Seite verweist auf '+ids);return nwTracks({id:ids.split(',')[0],link:'',cover:album.cover,title:album.title});}
+      nwNote('Album-Seite Titel: '+out.length);
+      if(out.length)return out;
+    }catch(e){nwNote('Album-Seite Fehler: '+spMsg(e));}
+  }
+  return [];
+}
+function nwMenuHTML(){
+  var h='';
+  NW_MENU.forEach(function(g){
+    h+='<h3 class="nw-h">'+esc(g[0])+'</h3><div class="nw-grid">';
+    g[1].forEach(function(it){h+='<button class="nw-chip" data-act="open" data-type="nwp" data-key="'+esc(it[1])+'">'+esc(it[0])+'</button>';});
+    h+='</div>';
+  });
+  return h;
+}
+function nwPageHTML(path){
+  var c=nwLoad('p:'+path,function(){return nwAlbumsFromPage(path);});
+  var h='<div class="bar"><button class="pill" data-act="nwopenurl" data-u="'+esc(nwAbs(path))+'">In Neowake öffnen</button></div>';
+  if(c.loading)return h+'<p class="none">Lade '+esc(nwName(path))+' …</p>';
+  if(c.err)return h+'<p class="none">Konnte nicht laden: '+esc(c.err)+'</p>';
+  if(!c.data.length)return h+'<p class="none">Hier wurden keine Inhalte gefunden. Bist du in Neowake angemeldet? Tippe auf „In Neowake öffnen“, melde dich an und komm zurück.</p>';
+  c.data.forEach(function(a){
+    nwCache['a:'+a.id+':meta']=a;
+    h+='<div class="row"><button class="rowmain" data-act="open" data-type="nwa" data-key="'+esc(a.id)+'">'+(a.cover?'<div class="cov rc" style="background-image:url(\''+esc(a.cover)+'\')"></div>':'<div class="cov tile fav rc">'+ic('note',1)+'</div>')+'<span class="rt"><b>'+esc(a.title)+'</b><small>Neowake</small></span></button></div>';
+  });
+  return h;
+}
+function nwAlbumHTML(id){
+  var meta=(nwCache['a:'+id+':meta'])||{id:id,title:'Neowake',link:'',cover:''};
+  var c=nwLoad('t:'+id,function(){return nwTracks(meta);});
+  var h='<div class="dhead">'+(meta.cover?'<div class="cov dc" style="background-image:url(\''+esc(meta.cover)+'\')"></div>':'<div class="cov dc" style="background-color:var(--accent-soft);color:var(--accent)">'+ic('note',1)+'</div>')+'<div class="dtxt"><h2>'+esc(meta.title)+'</h2><p>Neowake'+(c.data?' · '+c.data.length+' Titel':'')+'</p></div></div>';
+  var tr=c.data||[];
+  listIds=tr.map(function(t,i){
+    var sid='nw'+id+'_'+i;
+    extSongs[sid]={id:sid,key:sid,title:t.title,artist:t.artist,album:meta.title,duration:t.dur||0,url:t.url,coverUrl:t.cover?nwAbs(t.cover):'',added:0};
+    return sid;
+  });
+  h+='<div class="bar">'+(tr.length?'<button class="pill pri" data-act="playall">'+ic('play',1)+'Abspielen</button><button class="pill" data-act="shuffleall">'+ic('shuffle')+'Zufall</button>':'')+(meta.link?'<button class="pill" data-act="nwopenurl" data-u="'+esc(meta.link)+'">In Neowake öffnen</button>':'')+'</div>';
+  if(c.loading)return h+'<p class="none">Lade Titel …</p>';
+  if(c.err)return h+'<p class="none">Konnte nicht laden: '+esc(c.err)+'</p>';
+  if(!tr.length)return h+'<p class="none">Die Titel dieses Albums konnte Fox Musik nicht lesen. Tippe auf „In Neowake öffnen“ und schick Claude die Diagnose aus dem Neowake-Reiter.</p>';
+  tr.forEach(function(t,i){
+    var on=cur&&cur.id===listIds[i];
+    h+='<div class="row'+(on?' now':'')+'"><button class="rowmain" data-act="play" data-i="'+i+'">'+coverHTML(extSongs[listIds[i]],'rc')+'<span class="rt"><b>'+esc(t.title)+'</b><small>'+esc(t.artist)+'</small></span><span class="dur">'+(on?'<span class="eq"><i></i><i></i><i></i></span>':(t.dur?fmt(t.dur):''))+'</span></button></div>';
+  });
+  return h;
+}
+
 /* ---------- Sparte Neowake (eigenes Konto, Anmeldung bleibt gespeichert) ---------- */
 var nwSession=null;
 function nwStatus(){
@@ -915,6 +1064,25 @@ function nwProbeCode(){
 }
 async function nwDiag(){
   var P=UPDP();
+  if(P&&P.neowakeFetch){
+    toast('Prüfe Neowake … (bis zu 30 Sekunden)',true);
+    var out={v:3};
+    try{
+      var st=await P.neowakeStatus();out.session=!!(st&&st.hasSession);
+      var al=await nwAlbumsFromPage('/love-code/');out.loveCodeAlben=al.length;out.sample=al.slice(0,3).map(function(a){return {id:a.id,title:a.title,link:String(a.link).replace(NW_BASE,'')};});
+      if(al[0]){
+        var tr=await nwTracks(al[0]);out.titelImErstenAlbum=tr.length;
+        if(tr[0]){
+          var u=tr[0].url;out.ersterTitel={host:(new URL(u)).host,pfad:(new URL(u)).pathname,hatParameter:/\?/.test(u)};
+          try{var a1=await nwFetch(u,{probe:true});out.zugriffMitAnmeldung=a1.status+' '+(a1.type||'');}catch(e){out.zugriffMitAnmeldung='Fehler '+spMsg(e);}
+          try{var a2=await nwFetch(u,{probe:true,cookies:false});out.zugriffOhneAnmeldung=a2.status+' '+(a2.type||'');}catch(e){out.zugriffOhneAnmeldung='Fehler '+spMsg(e);}
+        }
+      }
+    }catch(e){out.fehler=spMsg(e);}
+    out.log=nwLog.slice(-40);
+    nwShowDiag('NEOWAKE-DIAGNOSE 3 (ohne Kennwort)\n'+JSON.stringify(out));
+    return;
+  }
   if(P&&P.neowakeRun){
     toast('Untersuche Neowake … (bis zu 30 Sekunden)',true);
     try{
@@ -949,6 +1117,7 @@ function neowakeHTML(){
   if(nwSession)h+='<p class="nw-ok">'+ic('heart',1)+'Anmeldung gespeichert</p>';
   h+='</div>';
   h+='<div id="nwNow"></div>';
+  if(isNative())h+='<h2 class="nw-h2">Bibliothek</h2><p class="nw-sub">Neowake-Titel direkt im Fox-Player hören.</p>'+nwMenuHTML();
   h+='<div class="nw-help"><b>So geht’s</b><ol>'+
     '<li>Tippe auf „Neowake öffnen“ und melde dich mit <b>deinem</b> Neowake-Benutzernamen und Kennwort an.</li>'+
     '<li>Hake dabei <b>„Eingeloggt bleiben“</b> an. Dann bist du beim nächsten Start automatisch angemeldet.</li>'+
@@ -1838,6 +2007,7 @@ document.addEventListener('click',function(e){
     case 'spconnect':spConnect();break;
     case 'nwopen':nwOpen();break;
     case 'nwlogout':nwLogout();break;
+    case 'nwopenurl':{if(audio&&!audio.paused)audio.pause();var Pu=UPDP();if(Pu&&Pu.openNeowake)Pu.openNeowake({url:el.dataset.u}).catch(function(){});else window.open(el.dataset.u,'_blank');break;}
     case 'nwdiag':nwDiag();break;
     case 'nwctl':{var Pc=UPDP();if(Pc&&Pc.neowakeControl)Pc.neowakeControl({cmd:el.dataset.c}).then(function(){setTimeout(nwPoll,400);}).catch(function(){});break;}
     case 'spdisconnect':spDisconnect();break;

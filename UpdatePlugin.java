@@ -375,8 +375,94 @@ public class UpdatePlugin extends Plugin {
     public void openNeowake(PluginCall call) {
         Intent i = new Intent(getContext(), NeowakeActivity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        String url = call.getString("url", "");
+        if (url != null && NeowakeActivity.isNeowake(url)) {
+            i.putExtra("url", url);
+        }
         getContext().startActivity(i);
         call.resolve();
+    }
+
+    // Laedt eine Neowake-Seite mit der gespeicherten Anmeldung (Cookies nur an neowake.de).
+    @PluginMethod
+    public void neowakeFetch(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final boolean probe = call.getBoolean("probe", false);
+        final boolean withCookies = call.getBoolean("cookies", true);
+        if (url == null || !url.startsWith("https://")) {
+            call.reject("Ungueltige Adresse");
+            return;
+        }
+        final Context ctx = getContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection c = null;
+                try {
+                    String cur = url;
+                    int status = 0;
+                    for (int hop = 0; hop < 5; hop++) {
+                        c = (HttpURLConnection) new URL(cur).openConnection();
+                        c.setInstanceFollowRedirects(false);
+                        c.setConnectTimeout(15000);
+                        c.setReadTimeout(30000);
+                        String ua = android.webkit.WebSettings.getDefaultUserAgent(ctx);
+                        c.setRequestProperty("User-Agent", ua == null ? "Mozilla/5.0" : ua.replace("; wv", ""));
+                        c.setRequestProperty("Accept-Language", "de-DE,de;q=0.9");
+                        CookieManager cm = CookieManager.getInstance();
+                        if (withCookies && NeowakeActivity.isNeowake(cur)) {
+                            String ck = cm.getCookie(cur);
+                            if (ck != null) {
+                                c.setRequestProperty("Cookie", ck);
+                            }
+                        }
+                        if (probe) {
+                            c.setRequestProperty("Range", "bytes=0-1");
+                        }
+                        status = c.getResponseCode();
+                        java.util.List<String> sc = c.getHeaderFields().get("Set-Cookie");
+                        if (sc != null && NeowakeActivity.isNeowake(cur)) {
+                            for (String v : sc) {
+                                cm.setCookie(cur, v);
+                            }
+                            cm.flush();
+                        }
+                        if (status >= 300 && status < 400 && c.getHeaderField("Location") != null) {
+                            cur = new URL(new URL(cur), c.getHeaderField("Location")).toString();
+                            c.disconnect();
+                            continue;
+                        }
+                        break;
+                    }
+                    String text = "";
+                    if (!probe) {
+                        InputStream in = status >= 400 ? c.getErrorStream() : c.getInputStream();
+                        if (in != null) {
+                            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                            byte[] buf = new byte[32768];
+                            int n;
+                            while ((n = in.read(buf)) > 0 && bo.size() < 6 * 1024 * 1024) {
+                                bo.write(buf, 0, n);
+                            }
+                            in.close();
+                            text = bo.toString("UTF-8");
+                        }
+                    }
+                    JSObject o = new JSObject();
+                    o.put("status", status);
+                    o.put("type", c.getContentType());
+                    o.put("url", cur);
+                    o.put("text", text);
+                    call.resolve(o);
+                } catch (Exception e) {
+                    call.reject(String.valueOf(e.getMessage()));
+                } finally {
+                    if (c != null) {
+                        c.disconnect();
+                    }
+                }
+            }
+        }).start();
     }
 
     @PluginMethod

@@ -198,7 +198,10 @@ public class NeowakeActivity extends Activity {
                 v.evaluateJavascript(BRIDGE_JS, null);
             }
         });
-        if (savedInstanceState != null) {
+        String want = getIntent() != null ? getIntent().getStringExtra("url") : null;
+        if (want != null && isNeowake(want)) {
+            web.loadUrl(want);
+        } else if (savedInstanceState != null) {
             web.restoreState(savedInstanceState);
         } else {
             web.loadUrl(START);
@@ -218,6 +221,15 @@ public class NeowakeActivity extends Activity {
             // ignore
         }
         return true;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String want = intent != null ? intent.getStringExtra("url") : null;
+        if (web != null && want != null && isNeowake(want)) {
+            web.loadUrl(want);
+        }
     }
 
     @Override
