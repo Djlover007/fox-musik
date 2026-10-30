@@ -370,6 +370,46 @@ public class UpdatePlugin extends Plugin {
         }
     }
 
+    // ---- Neowake-Sparte ----
+    @PluginMethod
+    public void openNeowake(PluginCall call) {
+        Intent i = new Intent(getContext(), NeowakeActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        getActivity().startActivity(i);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void neowakeStatus(PluginCall call) {
+        String c = CookieManager.getInstance().getCookie("https://app.neowake.de");
+        JSObject o = new JSObject();
+        o.put("hasSession", c != null && c.length() > 0);
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void neowakeLogout(PluginCall call) {
+        CookieManager cm = CookieManager.getInstance();
+        for (String u : new String[] { "https://app.neowake.de", "https://neowake.de", "https://www.neowake.de" }) {
+            String c = cm.getCookie(u);
+            if (c == null) {
+                continue;
+            }
+            for (String part : c.split(";")) {
+                String name = part.split("=", 2)[0].trim();
+                if (name.isEmpty()) {
+                    continue;
+                }
+                String exp = name + "=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/";
+                cm.setCookie(u, exp);
+                cm.setCookie(u, exp + "; Domain=.neowake.de");
+                cm.setCookie(u, exp + "; Domain=app.neowake.de");
+            }
+        }
+        cm.flush();
+        call.resolve();
+    }
+
     @PluginMethod
     public void spotifyStatus(PluginCall call) {
         JSObject o = new JSObject();

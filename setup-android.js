@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -62,6 +62,13 @@ if (!xml.includes('PlaybackService')) {
 if (!xml.includes('com.spotify.music')) {
   xml = xml.replace('</manifest>', '    <queries>\n        <package android:name="com.spotify.music" />\n    </queries>\n</manifest>');
   console.log('Spotify-Sichtbarkeit eingetragen');
+}
+if (!xml.includes('NeowakeActivity')) {
+  xml = xml.replace(
+    '</application>',
+    '    <activity android:name="' + pkg + '.NeowakeActivity" android:exported="false" android:label="Neowake" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" />\n    </application>'
+  );
+  console.log('Neowake-Sparte eingetragen');
 }
 if (!xml.includes('SpotifyLoginActivity')) {
   xml = xml.replace(

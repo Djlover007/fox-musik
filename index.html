@@ -56,6 +56,19 @@ svg.i.f{fill:currentColor;stroke:none}
 /* header */
 .head{display:flex;align-items:center;gap:4px;padding-top:12px;min-height:68px;flex:none}
 .head h1{margin:0;flex:1;min-width:0;font:700 32px/1.1 var(--font-display);letter-spacing:-.02em}
+.nw-card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;margin:18px 0 6px;padding:28px 18px 24px;border-radius:24px;background:linear-gradient(160deg,#1d2a5c,#3b2a6e 55%,#6b3a8a);color:#fff;box-shadow:0 14px 30px var(--shadow)}
+.nw-card h2{margin:0;font:700 26px/1.1 var(--font-display);letter-spacing:-.01em}
+.nw-card p{margin:0;color:rgba(255,255,255,.82);max-width:30ch}
+.nw-card .btn{background:#fff;color:#2a1f5c;margin-top:8px}
+.nw-logo{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;background:rgba(255,255,255,.16)}
+.nw-logo svg{width:32px;height:32px}
+.nw-ok{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.nw-ok svg{width:16px;height:16px;color:#ffb3d1}
+.nw-help{padding:14px 4px 6px}
+.nw-help b{font-weight:700}
+.nw-help ol{margin:8px 0 10px;padding-left:20px;line-height:1.5}
+.nw-help li{margin-bottom:6px}
+.nw-help small{color:var(--muted)}
 .brand{flex:1;min-width:0;display:flex;flex-direction:column}
 .brand small{font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:2px}
 .brand small span{color:var(--accent);font-weight:700}
@@ -807,6 +820,38 @@ function detailHTML(){
   }
   return h+barHTML(info.songs.length)+rowsHTML(info.songs);
 }
+/* ---------- Sparte Neowake (eigenes Konto, Anmeldung bleibt gespeichert) ---------- */
+var nwSession=null;
+function nwStatus(){
+  var P=UPDP();if(!P||!P.neowakeStatus)return;
+  P.neowakeStatus().then(function(r){var v=!!(r&&r.hasSession);if(v!==nwSession){nwSession=v;if(view.tab==='neowake'&&!view.detail)renderMain();}}).catch(function(){});
+}
+function nwOpen(){
+  if(audio&&!audio.paused)audio.pause();
+  var P=UPDP();
+  if(P&&P.openNeowake){P.openNeowake().catch(function(e){toast('Neowake lässt sich nicht öffnen: '+spMsg(e)+' (App aktualisieren?)');});}
+  else window.open('https://app.neowake.de/dashboard/','_blank');
+}
+async function nwLogout(){
+  if(!window.confirm('Von Neowake abmelden? Beim nächsten Öffnen musst du dich neu anmelden.'))return;
+  var P=UPDP();if(P&&P.neowakeLogout){try{await P.neowakeLogout();}catch(e){}}
+  nwSession=false;renderMain();toast('Von Neowake abgemeldet.');
+}
+function neowakeHTML(){
+  if(isNative()&&nwSession===null)nwStatus();
+  var h='<div class="nw-card"><div class="nw-logo">'+ic('note')+'</div><h2>Neowake</h2>'+
+    '<p>Deine Neowake-Inhalte direkt in Fox Musik, mit deinem eigenen Konto.</p>'+
+    '<button class="btn" data-act="nwopen">'+ic('play',1)+'Neowake öffnen</button>';
+  if(nwSession)h+='<p class="nw-ok">'+ic('heart',1)+'Anmeldung gespeichert</p>';
+  h+='</div>';
+  h+='<div class="nw-help"><b>So geht’s</b><ol>'+
+    '<li>Tippe auf „Neowake öffnen“ und melde dich mit <b>deinem</b> Neowake-Benutzernamen und Kennwort an.</li>'+
+    '<li>Hake dabei <b>„Eingeloggt bleiben“</b> an. Dann bist du beim nächsten Start automatisch angemeldet.</li>'+
+    '<li>Mit der Zurück-Geste kommst du wieder zu Fox Musik. Neowake bleibt im Hintergrund offen, „Neowake öffnen“ bringt dich direkt zurück.</li>'+
+    '</ol><small>Fox Musik speichert dein Kennwort nicht, die Anmeldung verwaltet Neowake selbst.</small></div>';
+  if(nwSession)h+='<div class="bar" style="justify-content:center"><button class="pill" data-act="nwlogout">Abmelden</button></div>';
+  return h;
+}
 function renderMain(){
   var m=$('#main');
   if(!ready){m.innerHTML='';return;}
@@ -815,10 +860,11 @@ function renderMain(){
   else if(view.tab==='tracks')h=tracksHTML();
   else if(view.tab==='playlists')h=playlistsHTML();
   else if(view.tab==='albums')h=albumsHTML();
+  else if(view.tab==='neowake')h=neowakeHTML();
   else h=artistsHTML();
   m.innerHTML=h;
 }
-var TABS=[['tracks','Titel'],['playlists','Playlists'],['albums','Alben'],['artists','Interpreten']];
+var TABS=[['tracks','Titel'],['playlists','Playlists'],['albums','Alben'],['artists','Interpreten'],['neowake','Neowake']];
 function renderTabs(){
   var t=$('#tabs');
   t.hidden=!!view.detail;
@@ -1685,6 +1731,8 @@ document.addEventListener('click',function(e){
     case 'spadd':addSpot();break;
     case 'splogin':spLogin();break;
     case 'spconnect':spConnect();break;
+    case 'nwopen':nwOpen();break;
+    case 'nwlogout':nwLogout();break;
     case 'spdisconnect':spDisconnect();break;
     case 'spresetid':spResetId();break;
     case 'sprefresh':spCache={};render();break;
@@ -1889,6 +1937,7 @@ document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'&&isNative()&&ready&&Date.now()-lastScan>60000)scanDevice(false);
 
   if(document.visibilityState==='visible'&&isNative()&&ready)autoCheck();
+  if(document.visibilityState==='visible'&&isNative()&&view.tab==='neowake')nwStatus();
 });
 
 /* ---------- start ---------- */
