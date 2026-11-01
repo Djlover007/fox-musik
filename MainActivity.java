@@ -5,7 +5,10 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.CookieManager;
+import android.net.Uri;
 import android.webkit.PermissionRequest;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 
 import androidx.core.app.ActivityCompat;
@@ -13,6 +16,7 @@ import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
+import com.getcapacitor.BridgeWebViewClient;
 
 import java.util.ArrayList;
 
@@ -44,9 +48,31 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(UpdatePlugin.class);
         super.onCreate(savedInstanceState);
         setupSpotifyWebView();
+        setupAudioProxy();
         String[] missing = missingPermissions();
         if (missing.length > 0) {
             ActivityCompat.requestPermissions(this, missing, 7421);
+        }
+    }
+
+    // Neowake-Audio ueber https://localhost/_nwproxy?u=... durchreichen (siehe NwProxy)
+    private void setupAudioProxy() {
+        try {
+            getBridge().setWebViewClient(new BridgeWebViewClient(getBridge()) {
+                @Override
+                public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
+                    Uri u = req.getUrl();
+                    if (u != null && "/_nwproxy".equals(u.getPath())) {
+                        WebResourceResponse r = NwProxy.handle(u.getQueryParameter("u"), req.getRequestHeaders());
+                        if (r != null) {
+                            return r;
+                        }
+                    }
+                    return super.shouldInterceptRequest(view, req);
+                }
+            });
+        } catch (Exception e) {
+            // ignore
         }
     }
 
