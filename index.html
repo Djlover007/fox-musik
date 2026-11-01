@@ -87,6 +87,15 @@ svg.i.f{fill:currentColor;stroke:none}
 .nwsearch{display:flex;gap:8px;margin:10px 0 0}
 .nwsearch input{flex:1;min-width:0;height:48px;border-radius:8px;border:0;background:var(--surface2);color:var(--fg);padding:0 14px;font-weight:500}
 .nwsearch .btn{margin:0;height:48px;padding:0 16px;border-radius:8px}
+.eqp{display:flex;flex-wrap:wrap;gap:8px;padding:12px 0 6px}
+.eqc{border:0;border-radius:18px;padding:8px 13px;background:var(--surface);color:var(--fg);font-weight:600;font-size:13.5px}
+.eqc.on{background:var(--accent);color:var(--accent-ink)}
+.eqb{display:flex;flex-direction:column;gap:2px;padding-top:6px;transition:opacity .2s}
+.eqb.off{opacity:.45}
+.eqr{display:flex;align-items:center;gap:10px}
+.eqf{width:58px;flex:none;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.eqv{width:50px;flex:none;text-align:right;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.eqr input{flex:1}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
@@ -461,7 +470,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0]},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -573,7 +582,7 @@ function coverHTML(s,cls,seed,icon,round){
 function firstCover(arr){for(var i=0;i<arr.length;i++){if(arr[i].cover)return arr[i];}return arr[0]||null;}
 
 /* ---------- playback ---------- */
-function newAudio(plain){var a=new Audio();a.preload='auto';wireAudio(a);if(!plain&&state.skip)silenceInit(a);return a;}
+function newAudio(plain){var a=new Audio();a.preload='auto';wireAudio(a);if(!plain&&needFx())silenceInit(a);return a;}
 function fadeVol(a,from,to,secs,done){
   clearInterval(a._ft);
   var t0=Date.now(), ms=Math.max(200,secs*1000);
@@ -605,7 +614,7 @@ function loadSong(s,fx){
     if(audio._url){URL.revokeObjectURL(audio._url);audio._url='';}
     // Titel aus dem Internet (Neowake) duerfen nicht durch die Stille-Analyse laufen, sonst bleiben sie stumm
     if(remote&&audio._an){var o=audio;audio=newAudio(true);dropAudio(o);}
-    else if(!remote&&!audio._an&&state.skip){var o2=audio;audio=newAudio();dropAudio(o2);}
+    else if(!remote&&!audio._an&&needFx()){var o2=audio;audio=newAudio();dropAudio(o2);}
   }
   audio._counted=false;
   if(s.url){audio.src=s.url;}
@@ -714,12 +723,49 @@ function wireAudio(a){
 audio=newAudio();
 
 /* ---------- Pausen überspringen (experimentell) ---------- */
+/* ---------- Klangkette: Quelle -> Analyse -> Equalizer -> Lautsprecher ---------- */
+var EQ_F=[60,150,400,1000,2400,6000,15000], EQ_N=['60','150','400','1k','2,4k','6k','15k'];
+var EQ_P={
+  'Normal':[0,0,0,0,0,0,0],
+  'Bass-Boost':[7,5,2,0,0,0,0],
+  'Mehr Höhen':[0,0,0,0,2,5,7],
+  'Stimme':[-3,-2,1,4,4,2,0],
+  'Pop':[-1,2,4,4,2,0,-1],
+  'Rock':[5,3,-1,-1,1,4,5],
+  'Elektro':[6,4,0,-1,1,4,5],
+  'Klassik':[4,3,2,0,0,2,3],
+  'Entspannt':[2,1,0,-1,-2,-3,-4],
+  'Leise hören':[6,4,1,0,1,3,5]
+};
+var eqIn=null, eqNodes=[], eqPre=null;
+function needFx(){return !!(state.skip||(state.eq&&state.eq.on));}
+function eqBuild(){
+  if(eqIn)return;
+  actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  eqIn=actx.createGain();eqPre=actx.createGain();
+  var prev=eqIn;
+  EQ_F.forEach(function(f,i){
+    var n=actx.createBiquadFilter();
+    n.type=i===0?'lowshelf':(i===EQ_F.length-1?'highshelf':'peaking');
+    n.frequency.value=f;n.Q.value=1.05;n.gain.value=0;
+    prev.connect(n);prev=n;eqNodes.push(n);
+  });
+  prev.connect(eqPre);eqPre.connect(actx.destination);
+  eqApply();
+}
+function eqApply(){
+  if(!eqNodes.length)return;
+  var on=state.eq&&state.eq.on, g=(state.eq&&state.eq.g)||[0,0,0,0,0,0,0], mx=0;
+  eqNodes.forEach(function(n,i){var v=on?(g[i]||0):0;if(v>mx)mx=v;try{n.gain.setTargetAtTime(v,actx.currentTime,0.03);}catch(e){n.gain.value=v;}});
+  var pre=Math.pow(10,-(mx*0.4)/20);
+  try{eqPre.gain.setTargetAtTime(pre,actx.currentTime,0.03);}catch(e){eqPre.gain.value=pre;}
+}
 function silenceInit(a){
   if(a._an)return;
   try{
-    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    eqBuild();
     var src=actx.createMediaElementSource(a), an=actx.createAnalyser();
-    an.fftSize=512;src.connect(an);an.connect(actx.destination);
+    an.fftSize=512;src.connect(an);an.connect(eqIn);
     a._an=an;a._buf=new Uint8Array(an.fftSize);
     if(actx.state==='suspended')actx.resume();
   }catch(e){}
@@ -2204,7 +2250,7 @@ async function exportBackup(){
   state.playlists.forEach(function(p){(p.ids||[]).forEach(note);});
   Object.keys(state.stats||{}).forEach(note);
   var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
-    settings:{speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
+    settings:{eq:state.eq,speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
   var text=JSON.stringify(data), name='fox-musik-sicherung-'+new Date().toISOString().slice(0,10)+'.json';
   var P=UPDP();
   try{
@@ -2267,7 +2313,9 @@ async function applyBackup(text){
   var se=d.settings||{};
   if(se.speed)state.speed=se.speed;
   if(typeof se.fade==='number')state.fade=se.fade;
-  if(typeof se.skip==='boolean'){state.skip=se.skip;if(se.skip)silenceInit(audio);}
+  if(se.eq&&Array.isArray(se.eq.g)){state.eq=se.eq;eqApply();}
+  if(typeof se.skip==='boolean'){state.skip=se.skip;}
+  if(needFx()&&!(cur&&cur.url))silenceInit(audio);
   if(typeof se.lock==='boolean')state.lock=se.lock;
   if(typeof se.autoUpd==='boolean')state.autoUpd=se.autoUpd;
   if(typeof se.shuffle==='boolean')state.shuffle=se.shuffle;
@@ -2295,6 +2343,7 @@ function sleepLabel(){
 function pct(v,min,max){return ((v-min)/(max-min)*100).toFixed(1)+'%';}
 function settingsSheet(){
   var h='<div class="shead"><div class="rt"><b>Wiedergabe</b></div></div><div class="set">';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="eq"><b>Equalizer</b><small>'+(state.eq.on?esc(state.eq.p):'Aus')+'</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="sleepmenu"><b>Sleep-Timer</b><small>'+sleepLabel()+'</small></button></div>';
   h+='<div class="srow"><b>Wiedergabegeschwindigkeit</b><div class="val" id="vSpeed">'+fmtSpeed()+'</div><input type="range" data-set="speed" min="50" max="200" step="5" value="'+Math.round(state.speed*100)+'" style="--p:'+pct(state.speed*100,50,200)+'" aria-label="Wiedergabegeschwindigkeit"></div>';
   h+='<div class="srow"><b>Überblendung zwischen Titeln</b><div class="val" id="vFade">'+fmtFade()+'</div><input type="range" data-set="fade" min="0" max="12" step="1" value="'+state.fade+'" style="--p:'+pct(state.fade,0,12)+'" aria-label="Überblendung in Sekunden"></div>';
@@ -2311,6 +2360,18 @@ function settingsSheet(){
   h+='<div class="srow"><button class="sleepbtn" data-sa="bkimport"><b>Sicherung laden</b><small>Daten aus einer Sicherungsdatei zurückholen</small></button></div>';
   h+='</div>';
   h+='<div class="credit"><div class="credit-logo">'+ic('note')+'</div><b>Fox Musik</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Design by <span>Mr.Fox</span></small></div>';
+  openSheet(h);
+}
+function eqSheet(){
+  var e=state.eq;
+  var h='<div class="shead"><div class="rt"><b>Equalizer</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
+  h+='<div class="srow line"><div><b>Equalizer an</b><small>'+(cur&&cur.url?'Gerade läuft ein Neowake-Stream: dort wirkt er nicht':'Wirkt sofort auf deine Musik')+'</small></div><input type="checkbox" class="sw" data-set="eqon"'+(e.on?' checked':'')+' aria-label="Equalizer an"></div>';
+  h+='<div class="eqp">'+Object.keys(EQ_P).map(function(k){return '<button class="eqc'+(e.p===k?' on':'')+'" data-sa="eqp" data-p="'+esc(k)+'">'+esc(k)+'</button>';}).join('')+(e.p==='Eigene'?'<button class="eqc on" data-sa="eqp" data-p="Eigene">Eigene</button>':'')+'</div>';
+  h+='<div class="eqb'+(e.on?'':' off')+'">'+EQ_F.map(function(f,i){
+    var v=e.g[i]||0;
+    return '<div class="eqr"><span class="eqf">'+EQ_N[i]+' Hz</span><input type="range" min="-12" max="12" step="1" value="'+v+'" data-set="eqb" data-i="'+i+'" style="--p:'+((v+12)/24*100)+'%" aria-label="'+EQ_N[i]+' Hertz"><span class="eqv" id="eqv'+i+'">'+(v>0?'+':'')+v+' dB</span></div>';
+  }).join('')+'</div>';
+  h+='<p class="nw-sub" style="margin:10px 2px 0">Wirkt auf deine Musik und heruntergeladene Titel. Bei Neowake-Titeln direkt aus dem Internet wirkt er nicht, lade sie dafür herunter.</p>';
   openSheet(h);
 }
 function sleepSheet(){
@@ -2337,9 +2398,11 @@ function onSetting(e){
     if(state.skip){if(!(cur&&cur.url))silenceInit(audio);}else{audio._fast=false;audio.playbackRate=state.speed;}
     if(state.skip&&!audio._an)toast('Wirkt ab dem nächsten Titel.');
   }else if(k==='lock'){state.lock=el.checked;}
+  else if(k==='eqon'){state.eq.on=el.checked;if(state.eq.on&&!(cur&&cur.url))silenceInit(audio);eqApply();var bx=document.querySelector('.eqb');if(bx)bx.classList.toggle('off',!state.eq.on);}
+  else if(k==='eqb'){var bi=parseInt(el.dataset.i,10),bv=parseInt(el.value,10);state.eq.g[bi]=bv;state.eq.p='Eigene';if(!state.eq.on){state.eq.on=true;var sw=document.querySelector('[data-set="eqon"]');if(sw)sw.checked=true;var bx2=document.querySelector('.eqb');if(bx2)bx2.classList.remove('off');}if(!(cur&&cur.url))silenceInit(audio);el.style.setProperty('--p',((bv+12)/24*100)+'%');var ev=$('#eqv'+bi);if(ev)ev.textContent=(bv>0?'+':'')+bv+' dB';eqApply();[].slice.call(document.querySelectorAll('.eqc')).forEach(function(c){c.classList.remove('on');});}
   else if(k==='dark'){state.theme=el.checked?'dark':'light';applyTheme();}
   else if(k==='autoupd'){state.autoUpd=el.checked;if(state.autoUpd)autoCheck();}
-  if(e.type==='change'||k==='skip'||k==='lock'||k==='autoupd'||k==='dark'){saveState();pushNative();}
+  if(e.type==='change'||k==='skip'||k==='lock'||k==='autoupd'||k==='dark'||k==='eqon'){saveState();pushNative();}
 }
 function createPlaylist(){
   var inp=$('#plname'), name=(inp&&inp.value||'').trim();
@@ -2367,6 +2430,8 @@ function handleSheet(act,el){
   switch(act){
     case 'cancel':closeSheet();break;
     case 'settings':settingsSheet();break;
+    case 'eq':eqSheet();break;
+    case 'eqp':{var pn=el.dataset.p;if(EQ_P[pn]){state.eq.g=EQ_P[pn].slice();state.eq.p=pn;}state.eq.on=true;if(!(cur&&cur.url))silenceInit(audio);eqApply();saveState();eqSheet();break;}
     case 'upd':checkUpdate(true);break;
     case 'updgo':doUpdate();break;
     case 'spot':{var ss=byId(sctx.id);closeSheet();if(ss)spotSearch((ss.artist||'')+' '+ss.title);break;}
@@ -2739,7 +2804,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};if(saved.eq&&Array.isArray(saved.eq.g))state.eq=saved.eq;state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
@@ -2747,7 +2812,7 @@ render();
   render();
   setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   try{if(!localStorage.getItem('fox-d2')){localStorage.setItem('fox-d2','1');if(state.theme==='auto'){state.theme='dark';saveState();}}}catch(e){}
-  applyTheme();applySpeed();if(state.skip)silenceInit(audio);
+  applyTheme();applySpeed();if(needFx())silenceInit(audio);
   if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
 })();
 })();
