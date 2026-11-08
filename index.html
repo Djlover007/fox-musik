@@ -121,6 +121,10 @@ svg.i.f{fill:currentColor;stroke:none}
 .pextra{display:flex;justify-content:center;padding:4px 0 2px}
 .pextra .pill{background:color-mix(in srgb,var(--fg) 12%,transparent);color:var(--fg)}
 .pextra .pill.pri{background:var(--fg);color:var(--bg)}
+.altime{display:block;margin-top:8px;font:700 34px/1.1 var(--font-display);background:var(--surface);color:var(--fg);border:0;border-radius:12px;padding:8px 14px;color-scheme:dark light}
+.alsel{display:block;width:100%;margin-top:8px;height:46px;border-radius:10px;border:0;background:var(--surface);color:var(--fg);padding:0 12px;font-weight:600}
+.alwake{text-align:center}
+.al-time{font:800 64px/1 var(--font-display);letter-spacing:-.03em;margin:10px 0 6px}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
@@ -500,7 +504,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},radioFav:[],rdIcons:{},eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:6},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},radioFav:[],rdIcons:{},alarm:null,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:6},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -508,7 +512,7 @@ var audioUrl='', seeking=false, sctx={};
 var covUrls=new Map();
 var extSongs={};
 var byId=function(id){for(var i=0;i<songs.length;i++){if(songs[i].id===id)return songs[i];}return extSongs[id]||null;};
-var saveState=function(){dbPut('meta',state,'state');};
+var saveState=function(){dbPut('meta',state,'state');autoLibSoon();};
 
 /* ---------- ID3 tags ---------- */
 function decText(d){
@@ -854,6 +858,7 @@ function pushNative(newTrack){
   }catch(e){}
 }
 async function coverB64(s){
+  if(s&&!s.cover&&s.coverUrl&&/^https?:/.test(s.coverUrl)){try{var Pi=UPDP();if(Pi&&Pi.imageB64){var ri=await Pi.imageB64({url:s.coverUrl});return (ri&&ri.data)||'';}}catch(e){}return '';}
   if(!s||!s.cover)return '';
   try{
     var bm=await createImageBitmap(s.cover), k=Math.min(1,320/Math.max(bm.width,bm.height));
@@ -872,6 +877,9 @@ function initNative(){
       else if(a==='next')next(false);
       else if(a==='prev')prev();
       else if(a==='seek'&&isFinite(e.position)){audio.currentTime=e.position/1000;pushNative();}
+      else if(a==='playId')autoPlayId(String(e.data||''));
+      else if(a==='search')autoSearch(String(e.data||''));
+      else if(a==='alarm')alarmFire();
     });
   }catch(x){}
 }
@@ -1851,7 +1859,7 @@ function homeHTML(){
   }).join('')+'</div>';
   return h+'<div style="height:12px"></div>';
 }
-function render(){renderHead();renderTabs();renderMain();renderNav();}
+function render(){renderHead();renderTabs();renderMain();renderNav();if(isNative())autoLibSoon();}
 function go(fn){fn();render();$('#main').scrollTop=0;}
 
 /* ---------- sheets ---------- */
@@ -2010,6 +2018,132 @@ function lyrTick(){
   var el=box.querySelector('.ll[data-i="'+i+'"]');
   if(el){el.classList.add('on');box.scrollTo({top:el.offsetTop-box.clientHeight*0.38,behavior:'smooth'});}
 }
+/* ---------- Android Auto: Bibliothek übergeben und Befehle ausführen ---------- */
+var autoT=null;
+function autoLibSoon(){clearTimeout(autoT);autoT=setTimeout(autoLibSend,2500);}
+function autoLists(){
+  var L={};
+  L.fav=state.favs.map(byId).filter(Boolean).map(function(s){return s.id;});
+  L.recent=smartList('recent').slice(0,60).map(function(s){return s.id;});
+  L.top=smartList('top').slice(0,60).map(function(s){return s.id;});
+  L.new=smartList('new').slice(0,60).map(function(s){return s.id;});
+  L.all=songs.slice().sort(function(a,b){return String(a.title).localeCompare(String(b.title),'de');}).slice(0,400).map(function(s){return s.id;});
+  L.radio=state.radioFav.map(rdSong);
+  state.playlists.forEach(function(p){L['pl:'+p.id]=plSongs(p).map(function(s){return s.id;});});
+  return L;
+}
+function autoLibSend(){
+  var P=PB();if(!P||!P.setLibrary)return;
+  try{
+    var L=autoLists(), T={root:[]};
+    function add(key,title,sub){if(!L[key]||!L[key].length)return;T.root.push({id:key,t:title,s:sub,b:true});T[key]=L[key].map(function(id){var s=byId(id);return s?{id:key+'|'+id,t:s.title,s:s.live?(s.nowTitle||'Radio'):(s.artist||NOARTIST)}:null;}).filter(Boolean);}
+    add('radio','Meine Radiosender',L.radio.length+' Sender');
+    add('fav','Bevorzugte Titel',L.fav.length+' Titel');
+    add('recent','Zuletzt gespielt','');
+    add('top','Meistgespielt','');
+    add('new','Neu hinzugefügt','');
+    if(state.playlists.length){
+      T.root.push({id:'pls',t:'Playlists',s:state.playlists.length+' Playlists',b:true});
+      T.pls=state.playlists.map(function(p){return {id:'pl:'+p.id,t:p.name,s:(L['pl:'+p.id]||[]).length+' Titel',b:true};});
+      state.playlists.forEach(function(p){var k='pl:'+p.id;T[k]=(L[k]||[]).map(function(id){var s=byId(id);return s?{id:k+'|'+id,t:s.title,s:s.artist||NOARTIST}:null;}).filter(Boolean);});
+    }
+    add('all','Alle Titel',songs.length+' Titel');
+    P.setLibrary({tree:JSON.stringify(T)}).catch(function(){});
+  }catch(e){}
+}
+function autoPlayId(mid){
+  if(!mid||mid==='__open')return;
+  var k=mid.lastIndexOf('|');var key=k>0?mid.slice(0,k):'', id=k>0?mid.slice(k+1):mid;
+  var L=autoLists(), list=L[key]||[id], i=Math.max(0,list.indexOf(id));
+  if(!byId(id))return;
+  startQueue(list,i);
+}
+function autoSearch(q){
+  q=String(q||'').trim().toLowerCase();
+  if(!q){var r=smartList('recent');if(r.length)startQueue(r.map(function(s){return s.id;}),0);else if(songs.length)startQueue(songs.map(function(s){return s.id;}),0);return;}
+  var rd=state.radioFav.filter(function(st){return String(st.name).toLowerCase().indexOf(q)>-1||q.indexOf(String(st.name).toLowerCase())>-1;});
+  if(rd.length){var ids=state.radioFav.map(rdSong);startQueue(ids,state.radioFav.indexOf(rd[0]));return;}
+  var pl=state.playlists.filter(function(p){return String(p.name).toLowerCase()===q;})[0];
+  if(pl){var pi=plSongs(pl).map(function(s){return s.id;});if(pi.length){startQueue(pi,0);return;}}
+  var hit=songs.filter(function(s){return [s.title,s.artist,s.album].join(' ').toLowerCase().indexOf(q)>-1;});
+  if(hit.length){startQueue(hit.map(function(s){return s.id;}),0);return;}
+  rbFetch('/json/stations/search?name='+encodeURIComponent(q)+'&order=clickcount&reverse=true&limit=5&hidebroken=true').then(function(j){var l=rbClean(j);if(l.length){var ids=l.map(rdSong);startQueue(ids,0);}}).catch(function(){});
+}
+
+/* ---------- Musik-Wecker ---------- */
+var AL_DAYS=['Mo','Di','Mi','Do','Fr','Sa','So'];
+function alDef(){return {on:false,h:7,m:0,days:[1,1,1,1,1,0,0],src:'fav',fade:true,vol:70};}
+function alNext(a){
+  if(!a||!a.on)return 0;
+  var now=new Date();
+  for(var d=0;d<8;d++){
+    var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+d,a.h,a.m,0,0);
+    var wd=(t.getDay()+6)%7;
+    var any=a.days.some(Boolean);
+    if(t.getTime()>now.getTime()+5000&&(!any||a.days[wd]))return t.getTime();
+  }
+  return 0;
+}
+function alLabel(a){
+  if(!a||!a.on)return 'Aus';
+  var t=alNext(a);if(!t)return 'Aus';
+  var d=new Date(t), today=new Date(), tm=new Date(today.getFullYear(),today.getMonth(),today.getDate()+1);
+  var day=d.toDateString()===today.toDateString()?'heute':d.toDateString()===tm.toDateString()?'morgen':AL_DAYS[(d.getDay()+6)%7];
+  return day+' um '+String(a.h).padStart(2,'0')+':'+String(a.m).padStart(2,'0');
+}
+async function alSchedule(silent){
+  var P=UPDP();if(!P||!P.setAlarm)return;
+  var t=alNext(state.alarm);
+  try{var r=await P.setAlarm({at:t});if(!silent&&t)toast('Wecker gestellt: '+alLabel(state.alarm)+(r&&r.mode==='inexact'?' (Android erlaubt nur ungefähre Zeit)':''));}catch(e){}
+}
+function alSources(){
+  var o=[['fav','Bevorzugte Titel'],['recent','Zuletzt gespielt'],['top','Meistgespielt'],['all','Alle Titel (Zufall)']];
+  state.playlists.forEach(function(p){o.push(['pl:'+p.id,'Playlist: '+p.name]);});
+  state.radioFav.forEach(function(st){o.push(['rd:'+st.uuid,'Radio: '+st.name]);});
+  return o;
+}
+function alarmSheet(){
+  var a=state.alarm||(state.alarm=alDef());
+  var h='<div class="shead"><div class="rt"><b>Musik-Wecker</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
+  h+='<div class="srow line"><div><b>Wecker an</b><small id="alLbl">'+esc(alLabel(a))+'</small></div><input type="checkbox" class="sw" data-set="alon"'+(a.on?' checked':'')+' aria-label="Wecker an"></div>';
+  h+='<div class="srow"><b>Uhrzeit</b><input type="time" class="altime" data-set="altime" value="'+String(a.h).padStart(2,'0')+':'+String(a.m).padStart(2,'0')+'"></div>';
+  h+='<div class="srow"><b>Tage</b><small>Keine Auswahl = nur einmal</small><div class="eqp">'+AL_DAYS.map(function(d,i){return '<button class="eqc'+(a.days[i]?' on':'')+'" data-sa="alday" data-i="'+i+'">'+d+'</button>';}).join('')+'</div></div>';
+  h+='<div class="srow"><b>Musik</b><select class="alsel" data-set="alsrc">'+alSources().map(function(o){return '<option value="'+esc(o[0])+'"'+(a.src===o[0]?' selected':'')+'>'+esc(o[1])+'</option>';}).join('')+'</select></div>';
+  h+='<div class="srow line"><div><b>Sanft lauter werden</b><small>In einer Minute von leise auf '+a.vol+' %</small></div><input type="checkbox" class="sw" data-set="alfade"'+(a.fade?' checked':'')+' aria-label="Sanft lauter werden"></div>';
+  h+='<div class="srow"><b>Lautstärke</b><div class="val" id="alVol">'+a.vol+' %</div><input type="range" min="10" max="100" step="5" data-set="alvol" value="'+a.vol+'" style="--p:'+((a.vol-10)/90*100)+'%" aria-label="Lautstärke"></div>';
+  h+='<button class="sitem" data-sa="altest">'+ic('play',1)+'<span>Jetzt testen</span></button>';
+  h+='<p class="nw-sub" style="margin:8px 2px 0">Lass Fox Musik im Hintergrund geöffnet und den Ton am Handy an. Beim ersten Mal fragt Android eventuell nach der Erlaubnis für Wecker.</p>';
+  openSheet(h);
+}
+var alFadeT=null, alActive=false;
+function alarmFire(){
+  if(alActive)return;alActive=true;
+  var a=state.alarm||alDef(), src=a.src, list=[];
+  if(src==='fav')list=state.favs.filter(function(id){return byId(id);});
+  else if(src==='recent')list=smartList('recent').map(function(s){return s.id;});
+  else if(src==='top')list=smartList('top').map(function(s){return s.id;});
+  else if(/^pl:/.test(src)){var p=state.playlists.filter(function(x){return 'pl:'+x.id===src;})[0];if(p)list=plSongs(p).map(function(s){return s.id;});}
+  else if(/^rd:/.test(src)){var st=state.radioFav.filter(function(x){return 'rd:'+x.uuid===src;})[0];if(st)list=[rdSong(st)];}
+  if(!list.length)list=songs.map(function(s){return s.id;});
+  if(src==='all'||!/^(pl:|rd:)/.test(src)){for(var i=list.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=list[i];list[i]=list[j];list[j]=t;}}
+  if(!list.length){alActive=false;toast('Wecker: keine Musik gefunden');return;}
+  startQueue(list,0);
+  var target=Math.max(0.1,Math.min(1,(a.vol||70)/100));
+  clearInterval(alFadeT);
+  if(a.fade){var t0=Date.now();audio.volume=0.05;alFadeT=setInterval(function(){var k=Math.min(1,(Date.now()-t0)/60000);try{audio.volume=0.05+(target-0.05)*k;}catch(e){}if(k>=1)clearInterval(alFadeT);},500);}
+  else{try{audio.volume=target;}catch(e){}}
+  openSheet('<div class="sform alwake"><div class="al-time">'+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'</div><h3>Guten Morgen!</h3><p>Fox Musik weckt dich mit Musik.</p><button class="btn" data-sa="alstop">Wecker aus</button><button class="btn ghost" data-sa="alsnooze">Schlummern (10 Min.)</button></div>');
+  setTimeout(function(){alSchedule(true);},3000);
+}
+function alarmStop(snooze){
+  alActive=false;clearInterval(alFadeT);
+  try{audio.volume=1;}catch(e){}
+  if(snooze){audio.pause();var P=UPDP();if(P&&P.setAlarm)P.setAlarm({at:Date.now()+10*60000}).catch(function(){});toast('Schlummern bis '+new Date(Date.now()+600000).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}));}
+  else{alSchedule(true);}
+  closeSheet();
+}
+function alarmCheck(){var P=UPDP();if(!P||!P.alarmPending)return;P.alarmPending().then(function(r){if(r&&r.pending)alarmFire();}).catch(function(){});}
+window.addEventListener('fox-alarm',function(){setTimeout(alarmCheck,600);});
 function songSheet(id){
   var s=byId(id);if(!s)return;
   sctx={id:id};
@@ -2749,6 +2883,7 @@ function pct(v,min,max){return ((v-min)/(max-min)*100).toFixed(1)+'%';}
 function settingsSheet(){
   var h='<div class="shead"><div class="rt"><b>Wiedergabe</b></div></div><div class="set">';
   h+='<div class="srow"><button class="sleepbtn" data-sa="eq"><b>Equalizer & Lautstärke</b><small>'+(state.eq.on?esc(state.eq.p):'Equalizer aus')+(state.eq.boost?' · Boost +'+state.eq.boost+' dB':'')+'</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="alarm"><b>Musik-Wecker</b><small>'+esc(alLabel(state.alarm))+'</small></button></div>';
   var miss=cvMissing().length;
   h+='<div class="srow"><button class="sleepbtn" data-sa="cvbatch"><b>Fehlende Cover suchen</b><small>'+(miss?miss+' Titel ohne Cover · online suchen':'Alle Titel haben ein Cover')+'</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="sleepmenu"><b>Sleep-Timer</b><small>'+sleepLabel()+'</small></button></div>';
@@ -2807,6 +2942,15 @@ function onSetting(e){
     if(state.skip){if(!isStreamBypass(cur))silenceInit(audio);}else{audio._fast=false;audio.playbackRate=state.speed;}
     if(state.skip&&!audio._an)toast('Wirkt ab dem nächsten Titel.');
   }else if(k==='lock'){state.lock=el.checked;}
+  else if(k==='alon'||k==='altime'||k==='alsrc'||k==='alfade'||k==='alvol'){
+    var a=state.alarm||(state.alarm=alDef());
+    if(k==='alon')a.on=el.checked;
+    else if(k==='altime'){var tv=String(el.value||'7:00').split(':');a.h=parseInt(tv[0],10)||0;a.m=parseInt(tv[1],10)||0;if(e.type==='change')a.on=true;}
+    else if(k==='alsrc')a.src=el.value;
+    else if(k==='alfade')a.fade=el.checked;
+    else if(k==='alvol'){a.vol=parseInt(el.value,10)||70;el.style.setProperty('--p',((a.vol-10)/90*100)+'%');var av=$('#alVol');if(av)av.textContent=a.vol+' %';}
+    if(e.type==='change'){saveState();alSchedule(!(k==='alon'||k==='altime')||!a.on);var lb=$('#alLbl');if(lb)lb.textContent=alLabel(a);var sw=document.querySelector('[data-set="alon"]');if(sw)sw.checked=a.on;}
+  }
   else if(k==='eqon'){state.eq.on=el.checked;if(state.eq.on&&!isStreamBypass(cur))silenceInit(audio);eqApply();var bx=document.querySelector('.eqb');if(bx)bx.classList.toggle('off',!state.eq.on);}
   else if(k==='eqb'){var bi=parseInt(el.dataset.i,10),bv=parseInt(el.value,10);state.eq.g[bi]=bv;state.eq.p='Eigene';if(!state.eq.on){state.eq.on=true;var sw=document.querySelector('[data-set="eqon"]');if(sw)sw.checked=true;var bx2=document.querySelector('.eqb');if(bx2)bx2.classList.remove('off');}if(!isStreamBypass(cur))silenceInit(audio);el.style.setProperty('--p',((bv+12)/24*100)+'%');var ev=$('#eqv'+bi);if(ev)ev.textContent=(bv>0?'+':'')+bv+' dB';eqApply();[].slice.call(document.querySelectorAll('.eqc')).forEach(function(c){c.classList.remove('on');});}
   else if(k==='dark'){state.theme=el.checked?'dark':'light';applyTheme();}
@@ -2859,6 +3003,11 @@ function handleSheet(act,el){
     }
     case 'next':queueNext(sctx.id);closeSheet();break;
     case 'cvsearch':cvManual(sctx.id);break;
+    case 'alarm':alarmSheet();break;
+    case 'alday':{var a=state.alarm||(state.alarm=alDef());var di=parseInt(el.dataset.i,10);a.days[di]=a.days[di]?0:1;saveState();if(a.on)alSchedule(true);alarmSheet();break;}
+    case 'altest':closeSheet();alarmFire();break;
+    case 'alstop':alarmStop(false);break;
+    case 'alsnooze':alarmStop(true);break;
     case 'cvuse':{var cc=cvPick&&cvPick.c[parseInt(el.dataset.i,10)];if(cc){toast('Lade Cover …',true);cvApply(cvPick.list,cc.url).then(function(){closeSheet();render();toast('Cover gespeichert');}).catch(function(e){toast('Cover konnte nicht geladen werden: '+spMsg(e));});}break;}
     case 'cvfile':cvFile();break;
     case 'cvstop':if(cvRun)cvRun.stop=true;closeSheet();break;
@@ -3228,7 +3377,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.rdIcons=saved.rdIcons||{};if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=6;}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=6;}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
@@ -3237,7 +3386,7 @@ render();
   setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   try{if(!localStorage.getItem('fox-d2')){localStorage.setItem('fox-d2','1');if(state.theme==='auto'){state.theme='dark';saveState();}}}catch(e){}
   applyTheme();applySpeed();if(needFx())silenceInit(audio);
-  if(isNative()){initNative();scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
+  if(isNative()){initNative();setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);if(state.alarm&&state.alarm.on)setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
 })();
 })();
 </script>
