@@ -768,6 +768,26 @@ public class UpdatePlugin extends Plugin {
         return t.isEmpty() ? "Neowake" : t;
     }
 
+    // Laedt ein Bild (z. B. Album-Cover) und gibt es als JPEG (Base64) zurueck
+    @PluginMethod
+    public void imageB64(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final Context ctx = getContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                byte[] b = fetchCover(ctx, url);
+                if (b == null) {
+                    call.reject("Bild nicht ladbar");
+                    return;
+                }
+                JSObject o = new JSObject();
+                o.put("data", android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP));
+                call.resolve(o);
+            }
+        }).start();
+    }
+
     @PluginMethod
     public void radioNow(PluginCall call) {
         String ru = call.getString("url", "");
