@@ -37,6 +37,24 @@ public class PlaybackPlugin extends Plugin {
         inst.notifyListeners("action", o);
     }
 
+    static void emitData(String action, String data) {
+        if (inst == null) {
+            return;
+        }
+        JSObject o = new JSObject();
+        o.put("action", action);
+        o.put("position", 0);
+        o.put("data", data == null ? "" : data);
+        inst.notifyListeners("action", o);
+    }
+
+    // Bibliothek fuer Android Auto (JSON-Baum aus der App)
+    @PluginMethod
+    public void setLibrary(PluginCall call) {
+        FoxBrowserService.setTree(call.getString("tree", "{}"));
+        call.resolve();
+    }
+
     @PluginMethod
     public void update(PluginCall call) {
         final Context ctx = getContext();
@@ -44,6 +62,8 @@ public class PlaybackPlugin extends Plugin {
         if (d.optBoolean("stop", false)) {
             PlaybackService.playing = false;
             PlaybackService.cover = null;
+            FoxSession.update();
+            FoxWidget.update(ctx);
             main.post(new Runnable() {
                 @Override
                 public void run() {

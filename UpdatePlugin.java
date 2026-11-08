@@ -788,6 +788,33 @@ public class UpdatePlugin extends Plugin {
         }).start();
     }
 
+    // ---- Musik-Wecker ----
+    @PluginMethod
+    public void setAlarm(PluginCall call) {
+        long at = (long) call.getDouble("at", 0d).doubleValue();
+        JSObject o = new JSObject();
+        if (at <= System.currentTimeMillis()) {
+            FoxAlarm.cancel(getContext());
+            o.put("mode", "off");
+        } else {
+            o.put("mode", FoxAlarm.schedule(getContext(), at));
+        }
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void alarmPending(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("pending", FoxAlarm.pending);
+        FoxAlarm.pending = false;
+        try {
+            ((android.app.NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE)).cancel(4244);
+        } catch (Exception ignore) {
+            // ignore
+        }
+        call.resolve(o);
+    }
+
     @PluginMethod
     public void radioNow(PluginCall call) {
         String ru = call.getString("url", "");

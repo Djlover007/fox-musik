@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -45,7 +45,11 @@ const perms = [
   '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />',
   '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
   '<uses-permission android:name="android.permission.WAKE_LOCK" />',
-  '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />'
+  '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />',
+  '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />',
+  '<uses-permission android:name="android.permission.USE_EXACT_ALARM" />',
+  '<uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />',
+  '<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'
 ];
 const missing = perms.filter(p => !xml.includes(p.match(/android:name="([^"]+)"/)[1]));
 if (missing.length) {
@@ -62,6 +66,24 @@ if (!xml.includes('PlaybackService')) {
 if (!xml.includes('com.spotify.music')) {
   xml = xml.replace('</manifest>', '    <queries>\n        <package android:name="com.spotify.music" />\n    </queries>\n</manifest>');
   console.log('Spotify-Sichtbarkeit eingetragen');
+}
+if (!xml.includes('FoxBrowserService')) {
+  xml = xml.replace(
+    '</application>',
+    '    <service android:name="' + pkg + '.FoxBrowserService" android:exported="true" android:label="Fox Musik">\n' +
+    '        <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>\n' +
+    '    </service>\n' +
+    '    <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />\n' +
+    '    <receiver android:name="' + pkg + '.FoxWidget" android:exported="false" android:label="Fox Musik">\n' +
+    '        <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>\n' +
+    '        <meta-data android:name="android.appwidget.provider" android:resource="@xml/fox_widget_info" />\n' +
+    '    </receiver>\n' +
+    '    <receiver android:name="' + pkg + '.FoxAlarm" android:exported="false">\n' +
+    '        <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>\n' +
+    '    </receiver>\n' +
+    '    </application>'
+  );
+  console.log('Android Auto, Widget und Wecker eingetragen');
 }
 if (!xml.includes('NeowakeActivity')) {
   xml = xml.replace(
@@ -118,6 +140,15 @@ fs.writeFileSync(manifest, xml);
 
 const res = path.join('android', 'app', 'src', 'main', 'res');
 fs.mkdirSync(path.join(res, 'xml'), { recursive: true });
+// Widget-, Android-Auto- und weitere Ressourcen aus dem Ordner android-res uebernehmen
+(function copyRes(src, dst) {
+  if (!fs.existsSync(src)) return;
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const a = path.join(src, e.name), b = path.join(dst, e.name);
+    if (e.isDirectory()) { fs.mkdirSync(b, { recursive: true }); copyRes(a, b); }
+    else fs.copyFileSync(a, b);
+  }
+})('android-res', res);
 fs.writeFileSync(path.join(res, 'xml', 'fox_paths.xml'),
   '<?xml version="1.0" encoding="utf-8"?>\n<paths>\n    <cache-path name="update" path="." />\n</paths>\n');
 

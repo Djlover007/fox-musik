@@ -47,17 +47,7 @@ public class PlaybackService extends Service {
             ch.setShowBadge(false);
             ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
         }
-        session = new MediaSession(this, "FoxMusik");
-        session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
-        session.setCallback(new MediaSession.Callback() {
-            @Override public void onPlay() { PlaybackPlugin.emit("play", 0); }
-            @Override public void onPause() { PlaybackPlugin.emit("pause", 0); }
-            @Override public void onStop() { PlaybackPlugin.emit("pause", 0); }
-            @Override public void onSkipToNext() { PlaybackPlugin.emit("next", 0); }
-            @Override public void onSkipToPrevious() { PlaybackPlugin.emit("prev", 0); }
-            @Override public void onSeekTo(long pos) { PlaybackPlugin.emit("seek", pos); }
-        });
-        session.setActive(true);
+        session = FoxSession.get(this);
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "foxmusik:playback");
         wake.setReferenceCounted(false);
@@ -82,22 +72,8 @@ public class PlaybackService extends Service {
 
     void refresh(boolean force) {
         try {
-            MediaMetadata.Builder mb = new MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, album)
-                .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
-            if (cover != null) {
-                mb.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cover);
-            }
-            session.setMetadata(mb.build());
-            long acts = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
-                | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO;
-            session.setPlaybackState(new PlaybackState.Builder()
-                .setActions(acts)
-                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-                    position, playing ? speed : 0f, SystemClock.elapsedRealtime())
-                .build());
+            FoxSession.update();
+            FoxWidget.update(this);
 
             Notification n = buildNotification();
             if (playing || (force && !foreground)) {
@@ -167,6 +143,7 @@ public class PlaybackService extends Service {
     public void onTaskRemoved(Intent rootIntent) {
         playing = false;
         stopForeground(true);
+        FoxSession.update();
         stopSelf();
     }
 
@@ -177,10 +154,7 @@ public class PlaybackService extends Service {
         if (wake != null && wake.isHeld()) {
             wake.release();
         }
-        if (session != null) {
-            session.setActive(false);
-            session.release();
-        }
+        FoxWidget.update(this);
         super.onDestroy();
     }
 

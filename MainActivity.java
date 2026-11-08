@@ -49,10 +49,36 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         setupSpotifyWebView();
         setupAudioProxy();
+        alarmWake(getIntent());
         String[] missing = missingPermissions();
         if (missing.length > 0) {
             ActivityCompat.requestPermissions(this, missing, 7421);
         }
+    }
+
+    // Musik-Wecker: ueber dem Sperrbildschirm anzeigen und Bildschirm einschalten
+    private void alarmWake(android.content.Intent i) {
+        if (i == null || !i.getBooleanExtra("fox_alarm", false)) {
+            return;
+        }
+        FoxAlarm.pending = true;
+        try {
+            if (Build.VERSION.SDK_INT >= 27) {
+                setShowWhenLocked(true);
+                setTurnScreenOn(true);
+            } else {
+                getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED | android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+            }
+            getBridge().getWebView().evaluateJavascript("window.dispatchEvent(new Event('fox-alarm'))", null);
+        } catch (Exception ignore) {
+            // ignore
+        }
+    }
+
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        alarmWake(intent);
     }
 
     // Neowake-Audio ueber https://localhost/_nwproxy?u=... durchreichen (siehe NwProxy)
