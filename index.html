@@ -108,6 +108,19 @@ svg.i.f{fill:currentColor;stroke:none}
 .cvc .cov{width:100%;height:auto;aspect-ratio:1;border-radius:6px;margin-bottom:6px}
 .cvc b{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cvc small{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lyr{display:none;flex:1;min-height:0;overflow-y:auto;padding:6px 4px 20px;-webkit-mask-image:linear-gradient(180deg,transparent,#000 8%,#000 88%,transparent);mask-image:linear-gradient(180deg,transparent,#000 8%,#000 88%,transparent);scrollbar-width:none}
+.lyr::-webkit-scrollbar{display:none}
+.player.lyron .stage{display:none}
+.player.lyron .lyr{display:block}
+.lyr-in{padding:30px 0 40vh}
+.lyr-in.plain{padding-bottom:20px;font:700 20px/1.55 var(--font-display);color:var(--fg)}
+.ll{margin:0 0 14px;font:700 23px/1.35 var(--font-display);letter-spacing:-.01em;color:color-mix(in srgb,var(--fg) 38%,transparent);transition:color .25s,transform .25s;transform-origin:left center}
+.ll.on{color:var(--fg);transform:scale(1.03)}
+.lyr-msg{margin:30% 0 0;text-align:center;color:var(--muted);font-size:16px}
+.lyr-src{text-align:center;color:var(--muted);font-size:11.5px;margin:0}
+.pextra{display:flex;justify-content:center;padding:4px 0 2px}
+.pextra .pill{background:color-mix(in srgb,var(--fg) 12%,transparent);color:var(--fg)}
+.pextra .pill.pri{background:var(--fg);color:var(--bg)}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
@@ -392,6 +405,8 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
   <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-radio" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2.5"/><path d="m7 8 9-5"/><circle cx="15.5" cy="14" r="2.6"/><path d="M6.5 12.5h4M6.5 15.5h4"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M4 5h11M4 10h11M4 15h7"/><path d="M18 14.5V5l3 1.5"/><circle cx="16" cy="17" r="2.5"/></symbol>
+  <symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.5 2M4 4.5 6.5 2.5M20 4.5l-2.5-2"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></symbol>
 </svg>
 
@@ -419,6 +434,7 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
     <button class="ib" data-act="pmore" data-ic="more" data-f="1" aria-label="Mehr"></button>
   </div>
   <div class="stage" id="pCovWrap"></div>
+  <div class="lyr" id="lyr" aria-live="polite"></div>
   <div class="pinfo">
     <div class="rt"><b id="pT"></b><small id="pA"></small></div>
     <button class="ib" data-act="pfav" id="pFav" aria-label="Favorit"></button>
@@ -434,6 +450,7 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
     <button class="ib skip" data-act="next" data-ic="next" data-f="1" aria-label="Nächster Titel"></button>
     <button class="ib" data-act="rep" id="pRep" aria-label="Wiederholen"></button>
   </div>
+  <div class="pextra"><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button></div>
 </section>
 
 <div class="scrim" id="scrim" data-sa="cancel"></div>
@@ -718,6 +735,7 @@ function wireAudio(a){
     if(!audio._counted&&audio.currentTime>=Math.min(30,(audio.duration||60)/2)){
       audio._counted=true;var st1=state.stats[cur.id]||(state.stats[cur.id]={n:0,last:0});st1.n++;st1.last=Date.now();saveStatsSoon();
     }
+    if(lyrOpen)lyrTick();
     sleepCheck();
     if(state.fade>0&&!audio.paused&&isFinite(audio.duration)&&audio.duration>state.fade*2+2&&audio.duration-audio.currentTime<=state.fade&&hasNext()){next(true,true);}
   });
@@ -904,6 +922,7 @@ function updateNow(){
   $('#tDur').textContent=fmtDur(cur,cur.duration);
   if(!miniSp())tintFor(cur);
   updateFav();updateTransport();renderMain();
+  if(lyrOpen)lyrRender();
 }
 function updateFav(){
   if(!cur)return;
@@ -1773,7 +1792,7 @@ function rdNowTick(){
   var P=UPDP();if(!P||!P.radioNow)return;
   P.radioNow({url:cur.url}).then(function(r){
     var t=String((r&&r.title)||'').trim();
-    if(t&&t!==cur.nowTitle){cur.nowTitle=t;cur.artist=t;updateNow();pushNative();}
+    if(t&&t!==cur.nowTitle){cur.nowTitle=t;cur.artist=t;lyrKey='';updateNow();pushNative();}
   }).catch(function(){});
 }
 function rdNowStart(){clearInterval(rdNowT);rdNowT=setInterval(rdNowTick,6000);setTimeout(rdNowTick,2500);}
@@ -1923,6 +1942,73 @@ function cvFile(){
     for(var k=0;k<cvPick.list.length;k++){var s=cvPick.list[k];s.cover=f;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
     closeSheet();render();if(cur&&cvPick.list.indexOf(cur)>-1){tintKey='';updateNow();pushNative(true);}toast('Cover gespeichert');};
   document.body.appendChild(inp);inp.click();
+}
+/* ---------- Liedtexte (lrclib.net) ---------- */
+var lyrOpen=false, lyrCache={}, lyrKey='', lyrLines=null, lyrIdx=-1;
+function lyrQuery(s){
+  if(!s)return null;
+  var t=s.title, a=s.artist&&s.artist!==NOARTIST?s.artist:'';
+  if(s.live){var nt=String(s.nowTitle||'');var m=nt.match(/^(.+?)\s+[-–—]\s+(.+)$/);if(!m)return null;a=m[1];t=m[2];}
+  if(s.albumId)return null;
+  t=String(t||'').replace(/\((official|lyric|audio|video|hd|remaster)[^)]*\)|\[[^\]]*\]/gi,'').replace(/\s+(feat|ft)\.?\s.*$/i,'').trim();
+  a=String(a||'').replace(/\s+(feat|ft)\.?\s.*$/i,'').split(/\s*[,;&]\s*/)[0].trim();
+  if(!t)return null;
+  return {t:t,a:a,al:s.album&&s.album!==NOALBUM&&s.album!=='Radio'?s.album:'',d:isFinite(s.duration)&&s.duration>0?Math.round(s.duration):0};
+}
+async function lyrFetch(q){
+  var k=(q.a+'|'+q.t).toLowerCase();
+  if(lyrCache[k])return lyrCache[k];
+  var res=null;
+  try{
+    var u='https://lrclib.net/api/get?artist_name='+encodeURIComponent(q.a)+'&track_name='+encodeURIComponent(q.t)+(q.al?'&album_name='+encodeURIComponent(q.al):'')+(q.d?'&duration='+q.d:'');
+    res=await cvGet(u);
+  }catch(e){res=null;}
+  if(!res||(!res.plainLyrics&&!res.syncedLyrics&&!res.instrumental)){
+    try{var list=await cvGet('https://lrclib.net/api/search?q='+encodeURIComponent((q.a+' '+q.t).trim()));
+      if(Array.isArray(list)){list=list.filter(function(x){return (x.plainLyrics||x.syncedLyrics)&&cvSim(x.trackName,q.t)>=0.6&&(!q.a||cvArtistOk(q.a,x.artistName)>=0.6);});res=list[0]||res;}}catch(e){}
+  }
+  var out={plain:res&&res.plainLyrics||'',synced:res&&res.syncedLyrics||'',instrumental:!!(res&&res.instrumental)};
+  lyrCache[k]=out;return out;
+}
+function lyrParse(txt){
+  var out=[];
+  String(txt||'').split(/\r?\n/).forEach(function(l){
+    var tags=l.match(/\[(\d+):(\d+(?:\.\d+)?)\]/g);if(!tags)return;
+    var text=l.replace(/\[[^\]]*\]/g,'').trim();
+    tags.forEach(function(tg){var m=tg.match(/\[(\d+):(\d+(?:\.\d+)?)\]/);out.push({t:(+m[1])*60+(+m[2]),x:text});});
+  });
+  return out.sort(function(a,b){return a.t-b.t;});
+}
+async function lyrRender(force){
+  var box=$('#lyr');if(!box)return;
+  if(!lyrOpen){$('#player').classList.remove('lyron');return;}
+  $('#player').classList.add('lyron');
+  var q=lyrQuery(cur), k=q?(q.a+'|'+q.t).toLowerCase():'none:'+(cur&&cur.id);
+  if(k===lyrKey&&!force)return;
+  lyrKey=k;lyrLines=null;lyrIdx=-1;
+  if(!q){box.innerHTML='<p class="lyr-msg">'+(cur&&cur.live?'Sobald der Sender den laufenden Titel meldet, erscheint hier der Text.':'Für diesen Titel gibt es keinen Liedtext.')+'</p>';return;}
+  box.innerHTML='<p class="lyr-msg">Suche Liedtext …</p>';
+  var r=await lyrFetch(q);
+  if(lyrKey!==k)return;
+  if(r.instrumental&&!r.plain){box.innerHTML='<p class="lyr-msg">♪ Instrumental ♪</p>';return;}
+  var syn=(cur&&!cur.live)?lyrParse(r.synced):[];
+  if(syn.length){
+    lyrLines=syn;
+    box.innerHTML='<div class="lyr-in">'+syn.map(function(l,i){return '<p class="ll" data-i="'+i+'">'+(esc(l.x)||'♪')+'</p>';}).join('')+'</div><p class="lyr-src">Liedtext: lrclib.net</p>';
+    lyrTick();
+  }else if(r.plain){
+    box.innerHTML='<div class="lyr-in plain">'+esc(r.plain).replace(/\n/g,'<br>')+'</div><p class="lyr-src">Liedtext: lrclib.net</p>';
+  }else box.innerHTML='<p class="lyr-msg">Kein Liedtext gefunden.</p>';
+}
+function lyrTick(){
+  if(!lyrOpen||!lyrLines||!audio)return;
+  var t=audio.currentTime+0.25, i=-1;
+  for(var k=0;k<lyrLines.length;k++){if(lyrLines[k].t<=t)i=k;else break;}
+  if(i===lyrIdx)return;lyrIdx=i;
+  var box=$('#lyr');if(!box)return;
+  [].slice.call(box.querySelectorAll('.ll.on')).forEach(function(e){e.classList.remove('on');});
+  var el=box.querySelector('.ll[data-i="'+i+'"]');
+  if(el){el.classList.add('on');box.scrollTo({top:el.offsetTop-box.clientHeight*0.38,behavior:'smooth'});}
 }
 function songSheet(id){
   var s=byId(id);if(!s)return;
@@ -2876,6 +2962,7 @@ document.addEventListener('click',function(e){
     case 'rep':cycleRepeat();break;
     case 'pfav':if(cur)toggleFav(cur.id);break;
     case 'pmore':if(cur){sctx={};songSheet(cur.id);}break;
+    case 'lyrics':lyrOpen=!lyrOpen;$('#pLyr').classList.toggle('pri',lyrOpen);lyrKey='';lyrRender(true);break;
   }
 });
 $('#files').addEventListener('change',function(e){var f=Array.prototype.slice.call(e.target.files);e.target.value='';addFiles(f);});
