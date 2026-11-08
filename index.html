@@ -98,6 +98,10 @@ svg.i.f{fill:currentColor;stroke:none}
 .eqr input{flex:1}
 .ib[data-act="rdfav"][aria-pressed="true"]{color:var(--accent);background:none}
 .nw-chip.rdhot{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.rdbox{position:relative;overflow:hidden;background:#fff;display:grid;place-items:center}
+.rdbox img{width:100%;height:100%;object-fit:contain;display:block}
+.rdbox.rdnone{background:linear-gradient(135deg,hsl(var(--h) 55% 55%),hsl(calc(var(--h) + 40) 58% 35%))}
+.rdbox.rdnone::after{content:'';width:42%;height:42%;background:#fff;opacity:.9;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='8' width='18' height='12' rx='2.5'/%3E%3Cpath d='m7 8 9-5'/%3E%3Ccircle cx='15.5' cy='14' r='2.6'/%3E%3Cpath d='M6.5 12.5h4M6.5 15.5h4'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='8' width='18' height='12' rx='2.5'/%3E%3Cpath d='m7 8 9-5'/%3E%3Ccircle cx='15.5' cy='14' r='2.6'/%3E%3Cpath d='M6.5 12.5h4M6.5 15.5h4'/%3E%3C/svg%3E") center/contain no-repeat}
 .rdcov{background-size:contain;background-repeat:no-repeat;background-color:#fff}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
@@ -474,7 +478,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},radioFav:[],eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:6},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},radioFav:[],rdIcons:{},eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:6},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -1597,7 +1601,7 @@ function rbClean(list){
   (list||[]).forEach(function(st){
     if(!st||!st.url_resolved||st.lastcheckok===0)return;
     var k=String(st.name||'').trim().toLowerCase();if(!k||seen[k])return;seen[k]=1;
-    out.push({uuid:st.stationuuid,name:String(st.name).trim(),url:st.url_resolved,favicon:st.favicon||'',tags:st.tags||'',country:st.country||'',cc:st.countrycode||'',codec:st.codec||'',bitrate:st.bitrate||0,hls:st.hls===1});
+    out.push({homepage:st.homepage||'',uuid:st.stationuuid,name:String(st.name).trim(),url:st.url_resolved,favicon:st.favicon||'',tags:st.tags||'',country:st.country||'',cc:st.countrycode||'',codec:st.codec||'',bitrate:st.bitrate||0,hls:st.hls===1});
   });
   return out;
 }
@@ -1609,7 +1613,89 @@ function rbLoad(key,path){
   return rbCache[key];
 }
 function rdProxy(u){return (isNative()&&/^https?:/.test(u||''))?location.origin+'/_radio?u='+encodeURIComponent(u):u;}
-function rdImg(st){var f=st&&st.favicon;if(!f||!/^https?:/.test(f))return '';return /^https:/.test(f)?f:rdProxy(f);}
+function rdImg(st){
+  if(!st)return '';
+  var k=state.rdIcons&&state.rdIcons[st.uuid];
+  if(k&&k!=='-')return k;
+  var f=st.favicon;if(!f||!/^https?:/.test(f))return '';
+  return f;
+}
+/* ---------- Sender-Icons ergänzen ---------- */
+var rdIconQ=[], rdIconBusy=0, rdIconTried={}, rdIconSaveT=null;
+function rdIconWant(st){
+  if(!st||!st.uuid||rdIconTried[st.uuid]||!isNative())return;
+  var k=state.rdIcons[st.uuid];if(k&&k!=='-')return;
+  if(k==='-'&&!st._retry)return;
+  rdIconTried[st.uuid]=1;rdIconQ.push(st);rdIconRun();
+}
+window.rdIconFail=function(img,uuid){
+  var st=rdFind(uuid);if(!st)return;
+  if(state.rdIcons[uuid]&&state.rdIcons[uuid]===img.getAttribute('src')){delete state.rdIcons[uuid];}
+  img.style.display='none';var p=img.parentNode;if(p)p.classList.add('rdnone');
+  delete rdIconTried[uuid];st._retry=1;st.favicon='';rdIconWant(st);
+};
+window.rdIconLoad=function(img,uuid){
+  var p=img.parentNode;if(p)p.classList.remove('rdnone');
+  if(img.naturalWidth&&img.naturalWidth<64&&!state.rdIcons[uuid]){var st=rdFind(uuid);if(st){st._small=1;rdIconWant(st);}}
+};
+function rdFind(uuid){
+  for(var i=0;i<state.radioFav.length;i++)if(state.radioFav[i].uuid===uuid)return state.radioFav[i];
+  var ks=Object.keys(extSongs);for(var j=0;j<ks.length;j++){var x=extSongs[ks[j]];if(x.radio&&x.radio.uuid===uuid)return x.radio;}
+  return null;
+}
+async function rdIconRun(){
+  while(rdIconBusy<3&&rdIconQ.length){
+    var st=rdIconQ.shift();rdIconBusy++;
+    rdIconFind(st).then(function(st){return function(u){rdIconSet(st,u||'-');};}(st)).catch(function(){}).then(function(){rdIconBusy--;rdIconRun();});
+  }
+}
+function rdIconSet(st,u){
+  if(u==='-'&&state.rdIcons[st.uuid])return;
+  state.rdIcons[st.uuid]=u;
+  if(u!=='-'){
+    [].slice.call(document.querySelectorAll('[data-rdu="'+st.uuid+'"]')).forEach(function(box){box.classList.remove('rdnone');box.innerHTML='<img src="'+esc(u)+'" alt="" loading="lazy" onerror="rdIconFail(this,\''+st.uuid+'\')">';});
+    var s=extSongs['rd'+st.uuid];if(s){s.coverUrl=u;if(cur===s)updateNow();}
+  }
+  clearTimeout(rdIconSaveT);rdIconSaveT=setTimeout(saveState,1500);
+}
+async function rdGetHtml(u){
+  var P=UPDP();if(!P||!P.neowakeFetch)return null;
+  try{var r=await P.neowakeFetch({url:u,cookies:false});if(r&&r.status<400&&/html/i.test(r.type||''))return {html:r.text||'',url:r.url||u};}catch(e){}
+  return null;
+}
+function rdBestIcon(html,base){
+  var doc=new DOMParser().parseFromString(html,'text/html'), c=[];
+  function abs(x){try{return new URL(x,base).toString();}catch(e){return '';}}
+  [].slice.call(doc.querySelectorAll('link[rel~="apple-touch-icon"],link[rel~="apple-touch-icon-precomposed"]')).forEach(function(l){c.push([300,abs(l.getAttribute('href'))]);});
+  var og=doc.querySelector('meta[property="og:image"],meta[name="og:image"],meta[name="twitter:image"]');if(og)c.push([250,abs(og.getAttribute('content'))]);
+  [].slice.call(doc.querySelectorAll('link[rel~="icon"]')).forEach(function(l){var s=parseInt((l.getAttribute('sizes')||'').split('x')[0],10)||32;if(/svg/i.test(l.getAttribute('type')||l.getAttribute('href')||''))s=200;c.push([s,abs(l.getAttribute('href'))]);});
+  c=c.filter(function(x){return x[1]&&/^https?:/.test(x[1]);}).sort(function(a,b){return b[0]-a[0];});
+  return c.length?c[0][1]:'';
+}
+async function rdIconFind(st){
+  // 1) Absolut Radio: Senderbild direkt von absolutradio.de
+  var m=String(st.name||'').match(/^absolut\s+(.+)$/i);
+  if(m){
+    var base=m[1].toLowerCase().replace(/[^a-z0-9äöüß ]+/g,' ').trim(), slugs=[base.replace(/\s+/g,'-'),base.replace(/\s+/g,'_'),base.replace(/\s+/g,'')];
+    for(var i=0;i<slugs.length;i++){
+      for(var p=0;p<2;p++){
+        var pg=await rdGetHtml('https://absolutradio.de/'+(p?'stream/':'sender/')+slugs[i]);
+        if(pg){var d=new DOMParser().parseFromString(pg.html,'text/html'), og=d.querySelector('meta[property="og:image"]');var ou=og&&og.getAttribute('content');if(ou&&!/absolut-?radio[^\/]*logo|default/i.test(ou))return ou;}
+      }
+    }
+  }
+  // 2) Homepage des Senders
+  var hp=String(st.homepage||'').trim();
+  if(hp){
+    var tries=[hp.replace(/^http:/i,'https:')];
+    try{var o=new URL(tries[0]);if(o.pathname!=='/')tries.push(o.origin+'/');}catch(e){}
+    for(var t=0;t<tries.length;t++){var pg2=await rdGetHtml(tries[t]);if(pg2){var best=rdBestIcon(pg2.html,pg2.url);if(best)return best;}}
+  }
+  // 3) Webseiten-Symbol als Notlösung
+  var host='';try{host=new URL(hp||st.url).hostname.replace(/^(stream|streams|live|edge\d*|icecast|listen|radio|player)\d*\./i,'');}catch(e){}
+  if(host&&!/^\d+\.\d+\.\d+\.\d+$/.test(host))return 'https://www.google.com/s2/favicons?domain='+encodeURIComponent(host)+'&sz=128';
+  return '';
+}
 function rdSub(st){var t=String(st.tags||'').split(',').map(function(x){return x.trim();}).filter(Boolean).slice(0,3).join(' · ');return t||st.country||'Radio';}
 function rdSong(st){
   var id='rd'+st.uuid, s=extSongs[id];
@@ -1617,7 +1703,11 @@ function rdSong(st){
   return id;
 }
 function rdIsFav(uuid){return state.radioFav.some(function(x){return x.uuid===uuid;});}
-function rdCov(st,cls){var im=rdImg(st);return im?'<div class="cov '+cls+' rdcov" style="background-image:url(\''+esc(im)+'\')"></div>':'<div class="cov ph '+cls+'" style="--h:'+hue(st.name)+'">'+ic('radio')+'</div>';}
+function rdCov(st,cls){
+  var im=rdImg(st);
+  if(!im||(st.uuid&&state.rdIcons[st.uuid]==='-'&&!st.favicon))rdIconWant(st);
+  return '<div class="cov '+cls+' rdbox'+(im?'':' rdnone')+'" data-rdu="'+esc(st.uuid||'')+'" style="--h:'+hue(st.name)+'">'+(im?'<img src="'+esc(im)+'" alt="" loading="lazy" onload="rdIconLoad(this,\''+esc(st.uuid)+'\')" onerror="rdIconFail(this,\''+esc(st.uuid)+'\')">':'')+'</div>';
+}
 var rdLists={}, rdLN=0;
 function rdRows(list){
   var ids=list.map(rdSong), k='l'+(rdLN++%50);rdLists[k]=ids;listIds=ids;
@@ -2953,7 +3043,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=6;}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.rdIcons=saved.rdIcons||{};if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=6;}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
