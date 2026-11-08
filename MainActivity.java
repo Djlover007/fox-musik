@@ -62,6 +62,12 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                     Uri u = req.getUrl();
+                    if (u != null && "/_radio".equals(u.getPath())) {
+                        WebResourceResponse r = RadioProxy.handle(u.getQueryParameter("u"));
+                        if (r != null) {
+                            return r;
+                        }
+                    }
                     if (u != null && "/_nwproxy".equals(u.getPath())) {
                         WebResourceResponse r = NwProxy.handle(u.getQueryParameter("u"), req.getRequestHeaders());
                         if (r != null) {

@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -85,6 +85,10 @@ if (!xml.includes('foxupdate')) {
     '    </provider>\n    </application>'
   );
   console.log('Update-Dateifreigabe eingetragen');
+}
+if (!xml.includes('usesCleartextTraffic')) {
+  xml = xml.replace('<application', '<application android:usesCleartextTraffic="true"');
+  console.log('Radio: unverschluesselte Streams erlaubt');
 }
 fs.writeFileSync(manifest, xml);
 
