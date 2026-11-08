@@ -90,6 +90,8 @@ public class MainActivity extends BridgeActivity {
             cm.setAcceptCookie(true);
             cm.setAcceptThirdPartyCookies(wv, true);
             wv.getSettings().setMediaPlaybackRequiresUserGesture(false);
+            // Radio: viele Sender senden noch ueber http
+            wv.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
             wv.setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
                 @Override
                 public void onPermissionRequest(final PermissionRequest request) {

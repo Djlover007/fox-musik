@@ -620,7 +620,7 @@ function loadSong(s,fx){
     else if(!remote&&!audio._an&&needFx()){var o2=audio;audio=newAudio();dropAudio(o2);}
   }
   audio._counted=false;
-  if(s.live){cur.nowTitle='';s.artist=rdSub(s.radio||{});audio.src=rdProxy(s.url);audio._proxied=audio.src!==s.url;rdClick(s.radio||{});rdNowStart();}
+  if(s.live){s.nowTitle='';s.artist=rdSub(s.radio||{});audio.src=s.url;audio._proxied=false;rdClick(s.radio||{});rdNowStart();}
   else if(s.url){audio.src=nwSrc(s);audio._proxied=audio.src!==s.url;}
   else if(s.device){audio.src=devUrl(s);}
   else{audio._url=URL.createObjectURL(s.blob);audio.src=audio._url;}
@@ -719,11 +719,11 @@ function wireAudio(a){
   });
   a.addEventListener('play',function(){if(a===audio){srcFoxStarted();updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
   a.addEventListener('pause',function(){if(a===audio){updateTransport();pushNative();}});
-  a.addEventListener('ended',function(){if(a!==audio)return;if(cur&&cur.live){nwNote('Radio-Stream beendet, verbinde neu');setTimeout(function(){if(a===audio&&cur&&cur.live){a.src=rdProxy(cur.url);var p=a.play();if(p&&p.catch)p.catch(function(){});}},1500);return;}next(true);});
+  a.addEventListener('ended',function(){if(a!==audio)return;if(cur&&cur.live){nwNote('Radio-Stream beendet, verbinde neu');setTimeout(function(){if(a===audio&&cur&&cur.live){a.src=cur.url;var p=a.play();if(p&&p.catch)p.catch(function(){});}},1500);return;}next(true);});
   a.addEventListener('error',function(){if(a===audio&&cur&&cur.url){nwNote('Audio-Fehler Code '+(a.error&&a.error.code)+' '+String(a.currentSrc||'').split('?')[0]);
     if(a._proxied){nwNote('Umweg fehlgeschlagen, spiele direkt (ohne Equalizer)');var o=audio;audio=newAudio(true);dropAudio(o);audio.src=cur.url;applySpeed();var pp=audio.play();if(pp&&pp.catch)pp.catch(function(){});a._handled=true;}}});
   a.addEventListener('loadedmetadata',function(){if(a===audio&&cur&&cur.url)nwNote('Audio geladen, Länge '+Math.round(a.duration||0)+'s, Lautstärke '+a.volume+', stumm '+a.muted+', Analyse '+!!a._an);});
-  a.addEventListener('error',function(){if(a._handled)return;if(a===audio&&cur)toast(cur.url?'Dieser Neowake-Titel lässt sich in Fox Musik nicht abspielen. Nutze „In Neowake öffnen“ und schick Claude die Diagnose.':'Dieser Titel lässt sich nicht abspielen.');});
+  a.addEventListener('error',function(){if(a._handled)return;if(a===audio&&cur&&cur.live){toast('„'+cur.title+'“ lässt sich gerade nicht abspielen (Fehler '+((a.error&&a.error.code)||'?')+'). Probier einen anderen Sender.');return;}if(a===audio&&cur)toast(cur.url?'Dieser Neowake-Titel lässt sich in Fox Musik nicht abspielen. Nutze „In Neowake öffnen“ und schick Claude die Diagnose.':'Dieser Titel lässt sich nicht abspielen.');});
 }
 audio=newAudio();
 
@@ -746,7 +746,7 @@ var eqIn=null, eqNodes=[], eqPre=null, eqBoost=null, eqLim=null;
 function needFx(){return !!(state.skip||(state.eq&&(state.eq.on||state.eq.boost>0)));}
 // Neowake-Streams in der App ueber den eigenen Umweg laden, damit Klangeinstellungen wirken
 function nwSrc(s){return (isNative()&&/^https:/.test(s.url||''))?location.origin+'/_nwproxy?u='+encodeURIComponent(s.url):s.url;}
-function isStreamBypass(s){return !!(s&&s.url&&!isNative());}
+function isStreamBypass(s){return !!(s&&(s.live||(s.url&&!isNative())));}
 function fmtDur(s,d){return (s&&s.live)||!isFinite(d)?'LIVE':fmt(d);}
 function eqBuild(){
   if(eqIn)return;
@@ -2492,7 +2492,7 @@ function eqSheet(){
     var v=e.g[i]||0;
     return '<div class="eqr"><span class="eqf">'+EQ_N[i]+' Hz</span><input type="range" min="-12" max="12" step="1" value="'+v+'" data-set="eqb" data-i="'+i+'" style="--p:'+((v+12)/24*100)+'%" aria-label="'+EQ_N[i]+' Hertz"><span class="eqv" id="eqv'+i+'">'+(v>0?'+':'')+v+' dB</span></div>';
   }).join('')+'</div>';
-  h+='<p class="nw-sub" style="margin:10px 2px 0">Wirkt auf deine Musik und auf Neowake-Titel. Spotify spielt in der Spotify-App, dort gilt deren eigener Equalizer.</p>';
+  h+='<p class="nw-sub" style="margin:10px 2px 0">Wirkt auf deine Musik und auf Neowake-Titel. Radio spielt direkt vom Sender, dort wirkt er nicht. Spotify spielt in der Spotify-App, dort gilt deren eigener Equalizer.</p>';
   openSheet(h);
 }
 function sleepSheet(){

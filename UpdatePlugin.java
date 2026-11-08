@@ -770,7 +770,9 @@ public class UpdatePlugin extends Plugin {
 
     @PluginMethod
     public void radioNow(PluginCall call) {
-        String t = RadioProxy.NOW.get(call.getString("url", ""));
+        String ru = call.getString("url", "");
+        RadioProxy.refresh(ru);
+        String t = RadioProxy.NOW.get(ru);
         JSObject o = new JSObject();
         o.put("title", t == null ? "" : t);
         call.resolve(o);

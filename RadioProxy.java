@@ -20,6 +20,57 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RadioProxy {
 
     static final Map<String, String> NOW = new ConcurrentHashMap<String, String>();
+    static final Map<String, Long> LAST = new ConcurrentHashMap<String, Long>();
+
+    // Holt alle 15 Sekunden kurz den aktuellen Liedtitel (liest nur bis zum ersten Metadaten-Block).
+    static void refresh(final String url) {
+        if (url == null || url.isEmpty()) {
+            return;
+        }
+        Long last = LAST.get(url);
+        long now = System.currentTimeMillis();
+        if (last != null && now - last < 15000) {
+            return;
+        }
+        LAST.put(url, now);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                InputStream in = null;
+                try {
+                    WebResourceResponse r = handle(url);
+                    in = r == null ? null : r.getData();
+                    if (in == null || !(in instanceof IcyStream)) {
+                        return;
+                    }
+                    byte[] buf = new byte[8192];
+                    long read = 0;
+                    String before = NOW.get(url);
+                    long until = System.currentTimeMillis() + 12000;
+                    while (read < 200000 && System.currentTimeMillis() < until) {
+                        int n = in.read(buf, 0, buf.length);
+                        if (n < 0) {
+                            break;
+                        }
+                        read += n;
+                        if (((IcyStream) in).seenMeta) {
+                            break;
+                        }
+                    }
+                } catch (Exception ignore) {
+                    // ignore
+                } finally {
+                    try {
+                        if (in != null) {
+                            in.close();
+                        }
+                    } catch (Exception ignore) {
+                        // ignore
+                    }
+                }
+            }
+        }).start();
+    }
 
     static WebResourceResponse handle(String url) {
         if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) {
@@ -156,6 +207,7 @@ public class RadioProxy {
         private final int metaint;
         private final String key;
         private int until;
+        volatile boolean seenMeta;
 
         IcyStream(InputStream in, int metaint, String key) {
             super(in);
@@ -197,6 +249,7 @@ public class RadioProxy {
                 }
             }
             until = metaint;
+            seenMeta = true;
         }
 
         @Override
