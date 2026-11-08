@@ -39,7 +39,7 @@ public class FoxSession {
             if (session != null) {
                 session.setPlaybackState(new PlaybackState.Builder()
                     .setState(PlaybackState.STATE_ERROR, 0, 0f)
-                    .setErrorMessage(PlaybackState.ERROR_CODE_APP_ERROR, "Bitte Fox Musik einmal auf dem Handy öffnen")
+                    .setErrorMessage("Bitte Fox Musik einmal auf dem Handy öffnen")
                     .build());
             }
             return;
