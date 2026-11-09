@@ -1236,4 +1236,31 @@ public class UpdatePlugin extends Plugin {
         r.put("name", n);
         call.resolve(r);
     }
+
+    // ---- Klangeinstellungen des Handys (Samsung: Tonqualitaet und Effekte) ----
+    @PluginMethod
+    public void openSoundFx(PluginCall call) {
+        Context ctx = getContext();
+        try {
+            Intent i = new Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL);
+            i.putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, ctx.getPackageName());
+            i.putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (i.resolveActivity(ctx.getPackageManager()) != null) {
+                ctx.startActivity(i);
+                call.resolve();
+                return;
+            }
+        } catch (Exception e) {
+            // weiter mit den allgemeinen Ton-Einstellungen
+        }
+        try {
+            Intent s = new Intent(Settings.ACTION_SOUND_SETTINGS);
+            s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(s);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
 }

@@ -167,6 +167,13 @@ svg.i.f{fill:currentColor;stroke:none}
 .pqr{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:4px 0 8px}
 .pqr img{width:min(70vw,240px);aspect-ratio:1;background:#fff;border-radius:18px;padding:10px;image-rendering:pixelated}
 .pqr b{font-size:17px}.pqr small{color:var(--muted)}
+.htear{margin:18px auto 8px;width:170px;height:170px;border-radius:50%;display:grid;place-content:center;text-align:center;font:700 26px/1.2 var(--font-display);background:var(--accent-soft);color:var(--accent);animation:htp 1.1s ease-in-out infinite}
+.htear small{display:block;font:600 14px var(--font-body);color:var(--muted)}
+@keyframes htp{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+.btn.htbig{height:64px;font-size:18px;width:100%}
+.htres{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:6px 0 12px}
+.htres b{display:block;margin-bottom:6px}
+.htb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:5px 0}.htb span{width:30px}.htb i{flex:1;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--w),var(--line) var(--w))}.htb em{font-style:normal;width:44px;text-align:right}
 .pcnew{color:var(--accent);font-weight:700}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
@@ -580,7 +587,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],yr:{},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -896,7 +903,8 @@ function eqRoute(need){
   eqBoost.connect(need?eqLim:actx.destination);
 }
 function eqActive(){return !!(state.eq&&state.eq.on&&(state.eq.g||[]).some(function(v){return v!==0;}));}
-function needFx(){return !!(state.skip||state.level||eqActive()||(state.eq&&state.eq.boost>0));}
+function fxActive(){var f=state.fx||{};return !!(f.sp||f.ex||(f.prof&&f.prof.on));}
+function needFx(){return !!(state.skip||state.level||eqActive()||fxActive()||(state.eq&&state.eq.boost>0));}
 // Neowake-Streams in der App ueber den eigenen Umweg laden, damit Klangeinstellungen wirken
 function nwSrc(s){return (isNative()&&/^https:/.test(s.url||''))?location.origin+'/_nwproxy?u='+encodeURIComponent(s.url):s.url;}
 function isStreamBypass(s){return !!(s&&(s.live||s.pod||(s.url&&!isNative())));}
@@ -916,8 +924,123 @@ function eqBuild(){
   eqLim.threshold.value=-2;eqLim.knee.value=0;eqLim.ratio.value=20;eqLim.attack.value=0.002;eqLim.release.value=0.15;
   eqOut=actx.createGain();eqOut.gain.value=Math.pow(10,-1.2/20);eqOut.connect(actx.destination);eqLim.connect(eqOut);
   eqLev=actx.createDynamicsCompressor();eqLevG=actx.createGain();
-  prev.connect(eqPre);eqPre.connect(eqLev);eqLev.connect(eqLevG);eqLevG.connect(eqBoost);eqRoute(false);
+  prev.connect(eqPre);fxBuild();eqPre.connect(fxIn);fxOut.connect(eqLev);eqLev.connect(eqLevG);eqLevG.connect(eqBoost);eqRoute(false);
   eqApply();
+}
+/* ---------- Klang-Effekte: Hörprofil, Höhen auffrischen, Raumklang ---------- */
+var PROF_F=[250,500,1000,2000,4000,8000];
+var fxIn=null, fxOut=null, fxProf={L:[],R:[]}, fxExG=null, fxDry=null, fxW={}, fxRoomG=null, fxComp=null;
+function fxBuild(){
+  if(fxIn)return;
+  fxIn=actx.createGain();fxOut=actx.createGain();
+  // Hörprofil: getrennte Filter fuer linkes und rechtes Ohr
+  var sp=actx.createChannelSplitter(2), mg=actx.createChannelMerger(2);
+  fxIn.connect(sp);
+  [0,1].forEach(function(ch){
+    var prev=null, first=null, side=ch?'R':'L';
+    PROF_F.forEach(function(f,i){var n=actx.createBiquadFilter();n.type=i===PROF_F.length-1?'highshelf':'peaking';n.frequency.value=f;n.Q.value=1.1;n.gain.value=0;if(prev)prev.connect(n);else first=n;prev=n;fxProf[side].push(n);});
+    sp.connect(first,ch);prev.connect(mg,0,ch);
+  });
+  // Höhen auffrischen: erzeugt fehlende Obertoene, wie sie bei MP3 oft abgeschnitten sind
+  var sum=actx.createGain();fxDry=sum;mg.connect(sum);
+  var hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=3200;hp.Q.value=0.7;
+  var ws=actx.createWaveShaper(), cv=new Float32Array(2048);for(var i=0;i<cv.length;i++){var x=i/(cv.length-1)*2-1;cv[i]=Math.tanh(3.2*x)/Math.tanh(3.2);}ws.curve=cv;ws.oversample='4x';
+  var hp2=actx.createBiquadFilter();hp2.type='highpass';hp2.frequency.value=8500;hp2.Q.value=0.7;
+  var hp3=actx.createBiquadFilter();hp3.type='highpass';hp3.frequency.value=8500;hp3.Q.value=0.7;
+  fxExG=actx.createGain();fxExG.gain.value=0;
+  mg.connect(hp);hp.connect(ws);ws.connect(hp2);hp2.connect(hp3);hp3.connect(fxExG);fxExG.connect(sum);
+  // Raumklang: Stereo-Verbreiterung plus kurzer, dezenter Raum
+  var s2=actx.createChannelSplitter(2), m2=actx.createChannelMerger(2);
+  sum.connect(s2);
+  fxW.LL=actx.createGain();fxW.LR=actx.createGain();fxW.RR=actx.createGain();fxW.RL=actx.createGain();
+  s2.connect(fxW.LL,0);s2.connect(fxW.LR,0);s2.connect(fxW.RR,1);s2.connect(fxW.RL,1);
+  fxW.LL.connect(m2,0,0);fxW.RL.connect(m2,0,0);fxW.RR.connect(m2,0,1);fxW.LR.connect(m2,0,1);
+  fxComp=actx.createGain();m2.connect(fxComp);fxComp.connect(fxOut);
+  var cvn=actx.createConvolver(), len=Math.floor(actx.sampleRate*0.9), ir=actx.createBuffer(2,len,actx.sampleRate);
+  for(var c=0;c<2;c++){var d=ir.getChannelData(c);for(var k=0;k<len;k++){var t=k/actx.sampleRate;d[k]=(Math.random()*2-1)*Math.exp(-t*5.5)*(t<0.012?0:1);}}
+  cvn.buffer=ir;
+  var lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6000;
+  var rhp=actx.createBiquadFilter();rhp.type='highpass';rhp.frequency.value=200;
+  fxRoomG=actx.createGain();fxRoomG.gain.value=0;
+  sum.connect(rhp);rhp.connect(cvn);cvn.connect(lp);lp.connect(fxRoomG);fxRoomG.connect(fxOut);
+  fxApply();
+}
+function fxSet(node,v){try{node.setTargetAtTime(v,actx.currentTime,0.05);}catch(e){node.value=v;}}
+function fxApply(){
+  if(!fxIn)return;
+  var f=state.fx||{}, pr=f.prof&&f.prof.on?f.prof:null;
+  ['L','R'].forEach(function(s){fxProf[s].forEach(function(n,i){fxSet(n.gain,pr?((pr[s]||[])[i]||0):0);});});
+  fxSet(fxExG.gain,[0,0.35,0.7][f.ex||0]);
+  var w=[1,1.45,1.85][f.sp||0], a=(1+w)/2, b=(1-w)/2;
+  fxSet(fxW.LL.gain,a);fxSet(fxW.RR.gain,a);fxSet(fxW.LR.gain,b);fxSet(fxW.RL.gain,b);
+  fxSet(fxRoomG.gain,[0,0.05,0.1][f.sp||0]);
+  var pmax=0;if(pr)['L','R'].forEach(function(s){(pr[s]||[]).forEach(function(v){if(v>pmax)pmax=v;});});
+  fxSet(fxComp.gain,Math.pow(10,-((f.sp?[0,1.5,3][f.sp]:0)+pmax*0.5)/20));
+}
+function fxSheet(){
+  var f=state.fx||{}, pr=f.prof;
+  var h='<div class="shead"><div class="rt"><b>Klang-Effekte</b><small>Eigene Effekte von Fox Musik</small></div><button class="ib" data-sa="eq" aria-label="Zurück">'+ic('left')+'</button></div>';
+  h+='<div class="srow"><b>Raumklang</b><small>Breiterer Stereo-Klang mit etwas Raum, am besten mit Kopfhörern</small><div class="eqp">'+['Aus','Leicht','Stark'].map(function(t,i){return '<button class="eqc'+((f.sp||0)===i?' on':'')+'" data-sa="fxsp" data-v="'+i+'">'+t+'</button>';}).join('')+'</div></div>';
+  h+='<div class="srow"><b>Höhen auffrischen</b><small>Ergänzt Obertöne, die bei MP3s oft fehlen. Klingt klarer und luftiger</small><div class="eqp">'+['Aus','Leicht','Stark'].map(function(t,i){return '<button class="eqc'+((f.ex||0)===i?' on':'')+'" data-sa="fxex" data-v="'+i+'">'+t+'</button>';}).join('')+'</div></div>';
+  h+='<div class="srow line"><div><b>Hörprofil</b><small>'+(pr?'Angepasst an dein Gehör · getestet am '+new Date(pr.at).toLocaleDateString('de-DE'):'Ein kurzer Hörtest passt den Klang an deine Ohren an')+'</small></div>'+(pr?'<input type="checkbox" class="sw" data-set="fxprof"'+(pr.on?' checked':'')+' aria-label="Hörprofil an">':'')+'</div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="htest"><b>'+(pr?'Hörtest wiederholen':'Hörtest starten')+'</b><small>Etwa 2 Minuten · Kopfhörer aufsetzen, ruhiger Raum</small></button></div>';
+  if(isNative())h+='<div class="srow"><button class="sleepbtn" data-sa="samsungfx"><b>Klangeinstellungen des Handys</b><small>Dolby Atmos, Adapt Sound und UHQ-Upscaler stellst du bei Samsung dort ein</small></button></div>';
+  h+='<p class="nw-sub" style="margin:10px 2px 0">Wirkt auf deine Musik, Neowake-Titel und Podcast-Downloads, nicht auf Radio. Die Effekte merkt sich die App auch pro Kopfhörer.</p>';
+  openSheet(h);
+}
+function fxSummary(){var f=state.fx||{}, o=[];if(f.sp)o.push('Raumklang');if(f.ex)o.push('Höhen');if(f.prof&&f.prof.on)o.push('Hörprofil');return o.length?o.join(', ')+' an':'Raumklang, Höhen auffrischen, Hörprofil';}
+function fxChanged(){if(needFx()&&cur&&!isStreamBypass(cur))silenceInit(audio);eqApply();saveState();}
+/* Hörtest */
+var HT={on:false};
+var HT_REF=[11,4.5,0,-1.5,-4,11];
+function htStart(){
+  try{eqBuild();if(actx.state==='suspended')actx.resume();}catch(e){toast('Hörtest nicht möglich.');return;}
+  if(audio&&!audio.paused)audio.pause();
+  HT={on:true,ear:'L',i:0,res:{L:[],R:[]},osc:null};
+  htSheet(true);
+}
+function htTone(){
+  htStopTone();
+  var f=PROF_F[HT.i], o=actx.createOscillator(), g=actx.createGain(), p=actx.createStereoPanner();
+  o.frequency.value=f;p.pan.value=HT.ear==='L'?-1:1;g.gain.value=0;
+  o.connect(g);g.connect(p);p.connect(actx.destination);o.start();
+  HT.osc=o;HT.g=g;HT.db=-75;HT.t0=Date.now();
+  HT.timer=setInterval(function(){
+    HT.db+=2.5;
+    if(HT.db>-8){htHeard(true);return;}
+    var v=Math.pow(10,HT.db/20);
+    // kurz an, kurz aus, damit man den Ton besser bemerkt
+    try{g.gain.cancelScheduledValues(actx.currentTime);g.gain.setTargetAtTime(v,actx.currentTime,0.02);g.gain.setTargetAtTime(0,actx.currentTime+0.35,0.02);}catch(e){}
+  },550);
+}
+function htStopTone(){if(HT.timer)clearInterval(HT.timer);HT.timer=0;if(HT.osc){try{HT.osc.stop();HT.osc.disconnect();}catch(e){}HT.osc=null;}}
+function htHeard(miss){
+  if(!HT.on)return;
+  htStopTone();
+  HT.res[HT.ear][HT.i]=miss?-8:HT.db;
+  HT.i++;
+  if(HT.i>=PROF_F.length){if(HT.ear==='L'){HT.ear='R';HT.i=0;}else{htFinish();return;}}
+  htSheet(false);setTimeout(function(){if(HT.on)htTone();},900);
+}
+function htFinish(){
+  HT.on=false;
+  var loss={L:[],R:[]}, all=[];
+  ['L','R'].forEach(function(s){HT.res[s].forEach(function(db,i){var v=db-HT_REF[i];loss[s][i]=v;all.push(v);});});
+  var base=all.slice().sort(function(a,b){return a-b;})[Math.floor(all.length*0.25)];
+  var prof={on:true,at:Date.now(),L:[],R:[],raw:HT.res};
+  ['L','R'].forEach(function(s){prof[s]=loss[s].map(function(v){return Math.max(0,Math.min(8,Math.round((v-base)*0.5)));});});
+  state.fx=state.fx||{};state.fx.prof=prof;fxChanged();
+  var sh='<div class="shead"><div class="rt"><b>Dein Hörprofil</b><small>Fertig, das Profil ist jetzt an</small></div></div><div class="htres">'+
+    ['L','R'].map(function(s){return '<div><b>'+(s==='L'?'Links':'Rechts')+'</b>'+PROF_F.map(function(f,i){var v=prof[s][i];return '<div class="htb"><span>'+(f>=1000?f/1000+'k':f)+'</span><i style="--w:'+(v/8*100)+'%"></i><em>'+(v?'+'+v:'0')+' dB</em></div>';}).join('')+'</div>';}).join('')+
+    '</div><p class="nw-sub">Wo du leiser hörst, hebt Fox Musik den Klang etwas an. Ein- und ausschalten kannst du das Profil unter „Klang-Effekte“.</p><div class="sform"><button class="btn" data-sa="fx">Fertig</button></div>';
+  openSheet(sh);
+}
+function htSheet(intro){
+  var n=PROF_F.length, step=(HT.ear==='L'?0:n)+HT.i+1;
+  var h='<div class="shead"><div class="rt"><b>Hörtest</b><small>'+(intro?'Vorbereitung':'Ton '+step+' von '+n*2+' · '+(HT.ear==='L'?'linkes':'rechtes')+' Ohr')+'</small></div></div>';
+  if(intro)h+='<div class="sform" style="padding-top:0"><p>Setz deine Kopfhörer auf und stell die Lautstärke auf etwa die Hälfte. Du hörst gleich Pieptöne, die langsam lauter werden.</p><p>Tippe auf „Ich höre den Ton“, sobald du ihn hörst, auch wenn er noch sehr leise ist.</p><button class="btn" data-sa="htgo">Los geht’s</button><button class="btn ghost" data-sa="htcancel">Abbrechen</button></div>';
+  else h+='<div class="htear '+HT.ear+'">'+(HT.ear==='L'?'Links':'Rechts')+'<small>'+PROF_F[HT.i]+' Hz</small></div><div class="sform"><button class="btn htbig" data-sa="htyes">Ich höre den Ton</button><button class="btn ghost" data-sa="htcancel">Abbrechen</button></div>';
+  openSheet(h);
 }
 function eqApply(){
   if(!eqNodes.length)return;
@@ -931,7 +1054,8 @@ function eqApply(){
     try{eqLevG.gain.setTargetAtTime(L?Math.pow(10,7/20):1,actx.currentTime,0.1);}catch(e){eqLevG.gain.value=L?2.24:1;}
   }
   var bst=(state.eq&&state.eq.boost)||0;
-  eqRoute(bst>0||(on&&mx>0)||!!state.level);
+  fxApply();
+  eqRoute(bst>0||(on&&mx>0)||!!state.level||fxActive());
   var bg=Math.pow(10,bst/20);
   try{eqBoost.gain.setTargetAtTime(bg,actx.currentTime,0.05);}catch(e){eqBoost.gain.value=bg;}
 }
@@ -2487,13 +2611,13 @@ async function mixFrom(id){
 }
 /* ---------- Equalizer je Kopfhörer ---------- */
 var curDev='';
-function devSave(){if(curDev&&state.eqPer!==false&&state.eq)state.eqDev[curDev]={eq:JSON.parse(JSON.stringify(state.eq)),level:!!state.level};}
+function devSave(){if(curDev&&state.eqPer!==false&&state.eq)state.eqDev[curDev]={eq:JSON.parse(JSON.stringify(state.eq)),level:!!state.level,fx:JSON.parse(JSON.stringify(state.fx||{}))};}
 function devSet(n,silent){
   if(!n||n===curDev)return;curDev=n;
   if(state.eqPer===false)return;
   var d=state.eqDev[n];
   if(d&&d.eq){
-    state.eq=JSON.parse(JSON.stringify(d.eq));state.level=!!d.level;
+    state.eq=JSON.parse(JSON.stringify(d.eq));state.level=!!d.level;if(d.fx)state.fx=JSON.parse(JSON.stringify(d.fx));
     if(needFx()&&cur&&!isStreamBypass(cur))silenceInit(audio);
     eqApply();dbPut('meta',state,'state');
     if(!silent)toast('Klang für „'+n+'“: '+(state.eq.on?state.eq.p:'Equalizer aus')+(state.eq.boost?' · +'+state.eq.boost+' dB':''));
@@ -3505,7 +3629,7 @@ function backupText(){
   Object.keys(state.stats||{}).forEach(note);
   var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
     radioFav:state.radioFav||[],
-    alarms:alList(),tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
+    alarms:alList(),fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
     settings:{eq:state.eq,speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
   return JSON.stringify(data);
 }
@@ -3650,6 +3774,7 @@ function eqSheet(){
   var h='<div class="shead"><div class="rt"><b>Equalizer</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
   var act=cur&&audio&&audio._an?'Klangkette aktiv für den laufenden Titel':(cur?'Wirkt ab dem nächsten Titel':'Wirkt sofort beim Abspielen');
   h+='<div class="srow"><b>Lautstärke-Boost</b><small>Macht leise Titel lauter, ein Begrenzer verhindert Übersteuern</small><div class="eqp">'+[0,3,6,9,12].map(function(v){return '<button class="eqc'+((e.boost||0)===v?' on':'')+'" data-sa="eqboost" data-v="'+v+'">'+(v?'+'+v+' dB':'Aus')+'</button>';}).join('')+'</div></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="fx"><b>Klang-Effekte</b><small>'+esc(fxSummary())+'</small></button></div>';
   if(isNative())h+='<div class="srow line"><div><b>Pro Kopfhörer merken</b><small>Gerade: '+esc(curDev||'wird erkannt …')+(Object.keys(state.eqDev).length?' · gemerkt für '+esc(Object.keys(state.eqDev).join(', ')):'')+'</small></div><input type="checkbox" class="sw" data-set="eqper"'+(state.eqPer!==false?' checked':'')+' aria-label="Equalizer pro Kopfhörer merken"></div>';
   h+='<div class="srow line"><div><b>Lautstärke angleichen</b><small>Leise und laute Titel klingen ähnlich laut</small></div><input type="checkbox" class="sw" data-set="level"'+(state.level?' checked':'')+' aria-label="Lautstärke angleichen"></div>';
   h+='<div class="srow line"><div><b>Equalizer an</b><small>'+act+'</small></div><input type="checkbox" class="sw" data-set="eqon"'+(e.on?' checked':'')+' aria-label="Equalizer an"></div>';
@@ -3700,6 +3825,7 @@ function onSetting(e){
     else if(k==='alvol'){a.vol=parseInt(el.value,10)||70;el.style.setProperty('--p',((a.vol-10)/90*100)+'%');var av=$('#alVol');if(av)av.textContent=a.vol+' %';}
     if(e.type==='change'){saveState();alSchedule(false,(k==='alon'||k==='altime')?a:null);var lb=$('#alLbl');if(lb)lb.textContent=alLabel(a);}
   }
+  else if(k==='fxprof'){if(state.fx.prof)state.fx.prof.on=el.checked;fxChanged();}
   else if(k==='eqper'){state.eqPer=el.checked;devSave();}
   else if(k==='level'){state.level=el.checked;if(state.level&&!isStreamBypass(cur))silenceInit(audio);eqApply();}
   else if(k==='eqon'){state.eq.on=el.checked;if(state.eq.on&&!isStreamBypass(cur))silenceInit(audio);eqApply();var bx=document.querySelector('.eqb');if(bx)bx.classList.toggle('off',!state.eq.on);}
@@ -3745,6 +3871,14 @@ function handleSheet(act,el){
     case 'tagt':{var tl=state.tags[sctx.id]||(state.tags[sctx.id]=[]), tt=el.dataset.t, ti=tl.indexOf(tt);if(ti<0)tl.push(tt);else tl.splice(ti,1);if(!tl.length)delete state.tags[sctx.id];saveState();tagSheet(sctx.id);renderMain();break;}
     case 'tagnew':{var inp=$('#tagin'), nt=((inp&&inp.value)||'').trim().slice(0,30);if(!nt)break;var tl2=state.tags[sctx.id]||(state.tags[sctx.id]=[]);if(tl2.indexOf(nt)<0)tl2.push(nt);saveState();tagSheet(sctx.id);renderMain();break;}
     case 'dups':dupSheet();break;
+    case 'fx':fxSheet();break;
+    case 'fxsp':state.fx.sp=parseInt(el.dataset.v,10)||0;fxChanged();fxSheet();break;
+    case 'fxex':state.fx.ex=parseInt(el.dataset.v,10)||0;fxChanged();fxSheet();break;
+    case 'htest':htStart();break;
+    case 'htgo':htSheet(false);setTimeout(htTone,700);break;
+    case 'htyes':htHeard(false);break;
+    case 'htcancel':HT.on=false;htStopTone();fxSheet();break;
+    case 'samsungfx':{var Pf=UPDP();if(Pf&&Pf.openSoundFx)Pf.openSoundFx().catch(function(){toast('Konnte die Klangeinstellungen nicht öffnen.');});break;}
     case 'mix':closeSheet();mixFrom(sctx.id);break;
     case 'wrap':closeSheet();wrapOpen();break;
     case 'party':partySheet();break;
@@ -4183,7 +4317,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;

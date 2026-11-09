@@ -64,7 +64,7 @@ if (!xml.includes('PlaybackService')) {
   console.log('Wiedergabe-Dienst eingetragen');
 }
 if (!xml.includes('com.spotify.music')) {
-  xml = xml.replace('</manifest>', '    <queries>\n        <package android:name="com.spotify.music" />\n    </queries>\n</manifest>');
+  xml = xml.replace('</manifest>', '    <queries>\n        <package android:name="com.spotify.music" />\n        <intent><action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" /></intent>\n    </queries>\n</manifest>');
   console.log('Spotify-Sichtbarkeit eingetragen');
 }
 if (!xml.includes('FoxBrowserService')) {
