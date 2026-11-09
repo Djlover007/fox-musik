@@ -166,7 +166,7 @@ svg.i.f{fill:currentColor;stroke:none}
 .wshare{position:relative;z-index:2;align-self:flex-start;background:#fff;color:#111}
 .pqr{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:4px 0 8px}
 .pqr img{width:min(70vw,240px);aspect-ratio:1;background:#fff;border-radius:18px;padding:10px;image-rendering:pixelated}
-.pqr b{font-size:17px}.pqr small{color:var(--muted)}
+.pqr b{font-size:17px}.ppin{font:800 22px/1 var(--font-display);letter-spacing:.12em;color:var(--accent)}.pqr small{color:var(--muted)}
 .htear{margin:18px auto 8px;width:170px;height:170px;border-radius:50%;display:grid;place-content:center;text-align:center;font:700 26px/1.2 var(--font-display);background:var(--accent-soft);color:var(--accent);animation:htp 1.1s ease-in-out infinite}
 .htear small{display:block;font:600 14px var(--font-body);color:var(--muted)}
 @keyframes htp{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
@@ -174,6 +174,9 @@ svg.i.f{fill:currentColor;stroke:none}
 .htres{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:6px 0 12px}
 .htres b{display:block;margin-bottom:6px}
 .htb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:5px 0}.htb span{width:30px}.htb i{flex:1;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--w),var(--line) var(--w))}.htb em{font-style:normal;width:44px;text-align:right}
+.setq{width:100%;height:44px;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:0 14px;font:inherit;margin:0 0 6px}
+.sg h4{margin:18px 2px 2px;font:700 12px/1 var(--font-body);letter-spacing:.09em;text-transform:uppercase;color:var(--accent)}
+.sg[hidden],.srow[hidden]{display:none!important}
 .pcnew{color:var(--accent);font-weight:700}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
@@ -2671,7 +2674,7 @@ function devSet(n,silent){
 }
 async function devInit(){var P=UPDP();if(!P||!P.audioDevice)return;try{var r=await P.audioDevice();devSet(r&&r.name,true);}catch(e){}}
 /* ---------- Party-Modus ---------- */
-var party={on:false,url:'',qr:'',wishes:[],wq:{}};
+var party={on:false,url:'',qr:'',pin:'',wishes:[],wq:{}};
 function partySongs(){return JSON.stringify(songs.filter(function(s){return !s.live&&!s.url;}).map(function(s){return {i:s.id,t:s.title,a:s.artist&&s.artist!==NOARTIST?s.artist:''};}).slice(0,8000));}
 function partyGuestHTML(){
   var acc=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#ff7a1a').trim();
@@ -2686,20 +2689,23 @@ function partyGuestHTML(){
   '<div class="now" id="now"><small>Läuft gerade</small><b>…</b></div>'+
   '<input id="nm" placeholder="Dein Name (optional)" maxlength="30"><input id="q" type="search" placeholder="Titel oder Interpret suchen" autocomplete="off"><div id="l"></div><div id="msg"></div>'+
   '<script>var S=[],L=document.getElementById("l"),Q=document.getElementById("q"),N=document.getElementById("nm");try{N.value=localStorage.getItem("fx-n")||""}catch(e){}'+
+  'var PIN=(location.search.match(/[?&]p=(\\d{4})/)||[])[1]||"";try{if(PIN)sessionStorage.setItem("fx-p",PIN);else PIN=sessionStorage.getItem("fx-p")||""}catch(e){}'+
+  'function load(){fetch("/songs?p="+PIN).then(function(x){if(x.status==403)throw 0;return x.json()}).then(function(j){S=j;r()}).catch(function(){L.innerHTML=\'<p>Bitte gib die PIN ein, die auf dem Handy des Gastgebers steht.</p><input id="pi" inputmode="numeric" maxlength="4" placeholder="PIN"><button id="pb">Weiter</button>\';document.getElementById("pb").onclick=function(){PIN=document.getElementById("pi").value.trim();try{sessionStorage.setItem("fx-p",PIN)}catch(e){}load()}})}'+
   'function e(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[c]})}'+
   'function r(){var q=Q.value.toLowerCase().trim(),o=S.filter(function(x){return !q||(x.t+" "+x.a).toLowerCase().indexOf(q)>-1}).slice(0,120);L.innerHTML=o.map(function(x){return \'<div class="r"><div><b>\'+e(x.t)+"</b><small>"+e(x.a||"")+\'</small></div><button data-i="\'+e(x.i)+\'">Wünschen</button></div>\'}).join("")||"<p>Nichts gefunden.</p>"}'+
   'function m(t){var x=document.getElementById("msg");x.textContent=t;x.style.display="block";clearTimeout(m.t);m.t=setTimeout(function(){x.style.display="none"},3500)}'+
-  'L.onclick=function(ev){var b=ev.target.closest("button");if(!b)return;b.disabled=true;try{localStorage.setItem("fx-n",N.value)}catch(e){}fetch("/wish?id="+encodeURIComponent(b.dataset.i)+"&n="+encodeURIComponent(N.value)).then(function(x){return x.json()}).then(function(j){m(j.ok?"Dein Wunsch ist in der Warteschlange!":(j.wait?"Kurz warten, dann kannst du dir das nächste Lied wünschen.":"Das hat nicht geklappt."));setTimeout(function(){b.disabled=false},8000)}).catch(function(){m("Keine Verbindung zum Handy.");b.disabled=false})};'+
-  'Q.oninput=r;fetch("/songs").then(function(x){return x.json()}).then(function(j){S=j;r()});'+
+  'L.onclick=function(ev){var b=ev.target.closest("button");if(!b||!b.dataset.i)return;b.disabled=true;try{localStorage.setItem("fx-n",N.value)}catch(e){}fetch("/wish?p="+PIN+"&id="+encodeURIComponent(b.dataset.i)+"&n="+encodeURIComponent(N.value)).then(function(x){return x.json()}).then(function(j){m(j.ok?"Dein Wunsch ist in der Warteschlange!":(j.wait?"Kurz warten, dann kannst du dir das nächste Lied wünschen.":"Das hat nicht geklappt."));setTimeout(function(){b.disabled=false},8000)}).catch(function(){m("Keine Verbindung zum Handy.");b.disabled=false})};'+
+  'Q.oninput=r;load();'+
   'function p(){fetch("/now").then(function(x){return x.json()}).then(function(j){var h="<small>Läuft gerade</small><b>"+e(j.t||"Gerade nichts")+"</b><span>"+e(j.a||"")+"</span>";if(j.next&&j.next.length)h+="<p style=\\"margin:10px 0 0\\">Als Nächstes: "+j.next.slice(0,3).map(function(x){return e(x.t)}).join(" · ")+"</p>";document.getElementById("now").innerHTML=h}).catch(function(){})}p();setInterval(p,5000);'+
   '<\/script></body></html>';
 }
 async function partyStart(){
   var P=UPDP();if(!P||!P.partyStart){toast('Der Party-Modus geht nur in der App auf dem Handy.');return;}
   try{
-    var r=await P.partyStart({html:partyGuestHTML(),songs:partySongs()});
+    var pin=String(Math.floor(1000+Math.random()*9000));
+    var r=await P.partyStart({html:partyGuestHTML(),songs:partySongs(),pin:pin});
     if(!r||!r.url){try{await P.partyStop();}catch(e){}toast('Kein WLAN gefunden. Verbinde dich mit dem WLAN oder schalte den Hotspot ein.');return;}
-    party.on=true;party.url=r.url;party.qr=r.qr||'';partyNow();partySheet();
+    party.on=true;party.pin=pin;party.url=r.url;party.qr=r.qr||'';partyNow();partySheet();
   }catch(e){toast('Party-Modus konnte nicht starten: '+spMsg(e));}
 }
 async function partyStop(){var P=UPDP();try{if(P)await P.partyStop();}catch(e){}party.on=false;party.wq={};closeSheet();toast('Party-Modus beendet');}
@@ -2723,7 +2729,7 @@ function partySheet(){
   if(!party.on){
     h+='<div class="sform" style="padding-top:0"><p>Deine Gäste scannen einen QR-Code und können sich Lieder aus deiner Sammlung wünschen. Die Wünsche landen der Reihe nach in deiner Warteschlange.</p><p>Alle müssen im selben WLAN sein, oder deine Gäste verbinden sich mit deinem Handy-Hotspot.</p><button class="btn" data-sa="partystart">Party starten</button></div>';
   }else{
-    h+='<div class="pqr" id="partyq">'+(party.qr?'<img alt="QR-Code für die Party-Seite" src="data:image/png;base64,'+party.qr+'">':'')+'<b>'+esc(party.url)+'</b><small>Mit der Handy-Kamera scannen oder die Adresse im Browser eingeben</small></div>';
+    h+='<div class="pqr" id="partyq">'+(party.qr?'<img alt="QR-Code für die Party-Seite" src="data:image/png;base64,'+party.qr+'">':'')+'<b>'+esc(party.url)+'</b><span class="ppin">PIN '+esc(party.pin)+'</span><small>Mit der Handy-Kamera scannen. Wer die Adresse von Hand eingibt, braucht die PIN.</small></div>';
     h+='<div class="bar" style="justify-content:center"><button class="pill" data-sa="partyshare">'+ic('share')+'Link teilen</button><button class="pill" data-sa="partystop">'+ic('close')+'Party beenden</button></div>';
     if(party.wishes.length)h+='<div class="sec"><h3>Wünsche</h3></div>'+party.wishes.slice().reverse().slice(0,20).map(function(w){return '<div class="srow line"><div><b>'+esc(w.t)+'</b><small>von '+esc(w.n)+' · '+new Date(w.at).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+'</small></div></div>';}).join('');
   }
@@ -3789,17 +3795,9 @@ function sleepLabel(){
 }
 function pct(v,min,max){return ((v-min)/(max-min)*100).toFixed(1)+'%';}
 function settingsSheet(){
-  var h='<div class="shead"><div class="rt"><b>Wiedergabe</b></div></div><div class="set">';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="eq"><b>Equalizer & Lautstärke</b><small>'+(state.eq.on?esc(state.eq.p):'Equalizer aus')+(state.eq.boost?' · Boost +'+state.eq.boost+' dB':'')+'</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="colors"><b>Akzentfarbe</b><small>'+esc((ACCENTS[state.accent]||ACCENTS.orange)[0])+'</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="alarm"><b>Wecker & Zeitpläne</b><small>'+esc(alSummary())+'</small></button></div>';
+  var h='<div class="shead"><div class="rt"><b>Einstellungen</b></div></div><input id="setq" class="setq" type="search" placeholder="Einstellung suchen …" autocomplete="off" aria-label="Einstellung suchen"><div class="set">';
   var miss=cvMissing().length;
-  h+='<div class="srow"><button class="sleepbtn" data-sa="cvbatch"><b>Fehlende Cover suchen</b><small>'+(miss?miss+' Titel ohne Cover · online suchen':'Alle Titel haben ein Cover')+'</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="wrap"><b>Dein Jahresrückblick '+new Date().getFullYear()+'</b><small>Hörzeit, Lieblingstitel und Interpreten</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="party"><b>Party-Modus</b><small>'+(party.on?'Läuft · '+party.wishes.length+' Wünsche':'Gäste wünschen sich Lieder per QR-Code')+'</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="dups"><b>Doppelte Titel finden</b><small>Gleiche Lieder aufspüren und aufräumen</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="lyrbatch"><b>Liedtexte offline speichern</b><small>'+(lyrRun?'Läuft gerade …':'Für alle Titel laden, damit sie ohne Internet da sind')+'</small></button></div>';
-  if(state.hideDirs.length)h+='<div class="srow"><button class="sleepbtn" data-sa="hiddendirs"><b>Ausgeblendete Ordner</b><small>'+state.hideDirs.length+' Ordner werden ignoriert</small></button></div>';
+  h+='<section class="sg"><h4>Wiedergabe</h4>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="sleepmenu"><b>Sleep-Timer</b><small>'+sleepLabel()+'</small></button></div>';
   h+='<div class="srow"><b>Wiedergabegeschwindigkeit</b><div class="val" id="vSpeed">'+fmtSpeed()+'</div><input type="range" data-set="speed" min="50" max="200" step="5" value="'+Math.round(state.speed*100)+'" style="--p:'+pct(state.speed*100,50,200)+'" aria-label="Wiedergabegeschwindigkeit"></div>';
   h+='<div class="srow"><b>Tempo für Podcasts & Hörbücher</b><div class="val" id="vSpeedL">'+spdTxt(state.speedLong||1)+'</div><input type="range" data-set="speedl" min="50" max="250" step="5" value="'+Math.round((state.speedLong||1)*100)+'" style="--p:'+pct((state.speedLong||1)*100,50,250)+'" aria-label="Tempo für Podcasts und Hörbücher"></div>';
@@ -3807,20 +3805,49 @@ function settingsSheet(){
   h+='<div class="srow line"><div><b>Lückenlos abspielen</b><small>Lädt den nächsten Titel vor, damit Live-Alben ohne Pause durchlaufen (nur wenn Überblendung aus ist)</small></div><input type="checkbox" class="sw" data-set="gapless"'+(state.gapless!==false?' checked':'')+' aria-label="Lückenlos abspielen"></div>';
   h+='<div class="srow line"><div><b>Pause zwischen Titeln überspringen</b><small>Experimentell: schneidet Stille am Anfang und Ende ab</small></div><input type="checkbox" class="sw" data-set="skip"'+(state.skip?' checked':'')+' aria-label="Pause zwischen Titeln überspringen"></div>';
   if(isNative())h+='<div class="srow line"><div><b>Musik über Sperrbildschirm steuern</b><small>Zeigt Titel und Tasten auch bei gesperrtem Handy</small></div><input type="checkbox" class="sw" data-set="lock"'+(state.lock?' checked':'')+' aria-label="Musik über Sperrbildschirm steuern"></div>';
+  h+='</section>';
+  h+='<section class="sg"><h4>Klang</h4>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="eq"><b>Equalizer & Lautstärke</b><small>'+(state.eq.on?esc(state.eq.p):'Equalizer aus')+(state.eq.boost?' · Boost +'+state.eq.boost+' dB':'')+'</small></button></div>';
+  h+='</section>';
+  h+='<section class="sg"><h4>Bibliothek</h4>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="cvbatch"><b>Fehlende Cover suchen</b><small>'+(miss?miss+' Titel ohne Cover · online suchen':'Alle Titel haben ein Cover')+'</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="dups"><b>Doppelte Titel finden</b><small>Gleiche Lieder aufspüren und aufräumen</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="lyrbatch"><b>Liedtexte offline speichern</b><small>'+(lyrRun?'Läuft gerade …':'Für alle Titel laden, damit sie ohne Internet da sind')+'</small></button></div>';
+  if(state.hideDirs.length)h+='<div class="srow"><button class="sleepbtn" data-sa="hiddendirs"><b>Ausgeblendete Ordner</b><small>'+state.hideDirs.length+' Ordner werden ignoriert</small></button></div>';
+  h+='</section>';
+  h+='<section class="sg"><h4>Extras</h4>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="alarm"><b>Wecker & Zeitpläne</b><small>'+esc(alSummary())+'</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="wrap"><b>Dein Jahresrückblick '+new Date().getFullYear()+'</b><small>Hörzeit, Lieblingstitel und Interpreten</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="party"><b>Party-Modus</b><small>'+(party.on?'Läuft · '+party.wishes.length+' Wünsche':'Gäste wünschen sich Lieder per QR-Code')+'</small></button></div>';
+  h+='</section>';
+  h+='<section class="sg"><h4>Aussehen</h4>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="colors"><b>Akzentfarbe</b><small>'+esc((ACCENTS[state.accent]||ACCENTS.orange)[0])+'</small></button></div>';
+  h+='<div class="srow line"><div><b>Dunkler Modus</b><small>'+(state.theme==='auto'?'Folgt gerade dem Handy':'Von dir eingestellt')+'</small></div><input type="checkbox" class="sw" data-set="dark"'+(isDark()?' checked':'')+' aria-label="Dunkler Modus"></div>';
+  if(state.theme!=='auto')h+='<div class="srow"><button class="sleepbtn" data-sa="themeauto"><b>Wie das Handy</b><small>Hell oder dunkel automatisch übernehmen</small></button></div>';
+  h+='</section>';
+  h+='<section class="sg"><h4>Sicherung & Update</h4>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="autobk"><b>Automatische Sicherung</b><small>Täglich in Google Drive oder auf dem Handy</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="bkexport"><b>Sicherung erstellen</b><small>Favoriten, Playlists und Zähler als Datei speichern</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="bkimport"><b>Sicherung laden</b><small>Daten aus einer Sicherungsdatei zurückholen</small></button></div>';
   if(isNative()){
     loadVer().then(function(){var el=$('#vUpd');if(el&&appVer)el.textContent='Version '+appVer.code+' · Tippen zum Prüfen';});
     h+='<div class="srow"><button class="sleepbtn" data-sa="upd"><b>App-Update</b><small id="vUpd">'+(appVer?'Version '+appVer.code+' · Tippen zum Prüfen':'Tippen zum Prüfen')+(upd?' · Neu: '+upd.ver+(upd.done?' (bereit)':''):'')+'</small></button></div>';
     h+='<div class="srow line"><div><b>Updates automatisch suchen und laden</b><small>Die Installation bestätigst du selbst</small></div><input type="checkbox" class="sw" data-set="autoupd"'+(state.autoUpd?' checked':'')+' aria-label="Updates automatisch suchen und laden"></div>';
   }
-  h+='<div class="srow line"><div><b>Dunkler Modus</b><small>'+(state.theme==='auto'?'Folgt gerade dem Handy':'Von dir eingestellt')+'</small></div><input type="checkbox" class="sw" data-set="dark"'+(isDark()?' checked':'')+' aria-label="Dunkler Modus"></div>';
-  if(state.theme!=='auto')h+='<div class="srow"><button class="sleepbtn" data-sa="themeauto"><b>Wie das Handy</b><small>Hell oder dunkel automatisch übernehmen</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="autobk"><b>Automatische Sicherung</b><small>Täglich in Google Drive oder auf dem Handy</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="bkexport"><b>Sicherung erstellen</b><small>Favoriten, Playlists und Zähler als Datei speichern</small></button></div>';
-  h+='<div class="srow"><button class="sleepbtn" data-sa="bkimport"><b>Sicherung laden</b><small>Daten aus einer Sicherungsdatei zurückholen</small></button></div>';
-  h+='</div>';
+  h+='</section>';
+  h+='<p class="none" id="setnone" hidden>Keine Einstellung gefunden.</p></div>';
   h+='<div class="credit"><div class="credit-logo">'+ic('note')+'</div><b>Fox Musik</b><small>'+(appVer?'Version '+appVer.code+' · ':'')+'Design by <span>Mr.Fox</span></small></div>';
   openSheet(h);
 }
+function setFilter(q){
+  q=String(q||'').toLowerCase().trim();var any=false;
+  document.querySelectorAll('#sheet .sg').forEach(function(sec){
+    var n=0;sec.querySelectorAll('.srow').forEach(function(r){var ok=!q||r.textContent.toLowerCase().indexOf(q)>-1||sec.querySelector('h4').textContent.toLowerCase().indexOf(q)>-1;r.hidden=!ok;if(ok)n++;});
+    sec.hidden=!n;if(n)any=true;
+  });
+  var no=$('#setnone');if(no)no.hidden=any;
+}
+document.addEventListener('input',function(e){if(e.target&&e.target.id==='setq')setFilter(e.target.value);});
 function eqSheet(){
   var e=state.eq;
   var h='<div class="shead"><div class="rt"><b>Equalizer</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
@@ -3936,7 +3963,7 @@ function handleSheet(act,el){
     case 'party':partySheet();break;
     case 'partystart':partyStart();break;
     case 'partystop':partyStop();break;
-    case 'partyshare':{var Ps=UPDP();if(Ps&&Ps.shareText)Ps.shareText({text:'Wünsch dir ein Lied bei Fox Musik: '+party.url,title:'Party-Link teilen'});break;}
+    case 'partyshare':{var Ps=UPDP();if(Ps&&Ps.shareText)Ps.shareText({text:'Wünsch dir ein Lied bei Fox Musik: '+party.url+'?p='+party.pin,title:'Party-Link teilen'});break;}
     case 'dupdel':{var dk=byId(el.dataset.keep), dr=byId(el.dataset.id);if(dk&&dr)dupMerge(dk,[dr]).then(dupSheet);break;}
     case 'dupall':{(async function(){var gs=dupGroups(), n=0;for(var gi=0;gi<gs.length;gi++){var g=gs[gi];await dupMerge(g[0],g.slice(1));n+=g.length-1;}closeSheet();toast(n+' doppelte Titel entfernt. Die Dateien auf dem Handy bleiben erhalten.');})();break;}
     case 'lyrbatch':closeSheet();lyrBatch();break;

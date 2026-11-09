@@ -22,6 +22,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Automatische Tests
+        run: |
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+          node tests/smoke.js
       - name: Web-Dateien vorbereiten
         run: |
           mkdir -p www && cp index.html www/index.html

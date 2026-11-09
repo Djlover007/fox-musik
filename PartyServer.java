@@ -34,6 +34,7 @@ public class PartyServer {
     static volatile String html = "";
     static volatile String songs = "[]";
     static volatile String now = "{}";
+    static volatile String pin = "";
     private static ServerSocket ss;
     private static Thread th;
     private static ExecutorService pool;
@@ -182,10 +183,13 @@ public class PartyServer {
             }
             if (path.equals("/") || path.equals("/index.html")) {
                 send(c, 200, "text/html", html);
-            } else if (path.equals("/songs")) {
-                send(c, 200, "application/json", songs);
             } else if (path.equals("/now")) {
                 send(c, 200, "application/json", now);
+            } else if (pin.length() > 0 && !pin.equals(query(q).get("p"))) {
+                Thread.sleep(400);
+                send(c, 403, "application/json", "{\"ok\":false,\"pin\":true}");
+            } else if (path.equals("/songs")) {
+                send(c, 200, "application/json", songs);
             } else if (path.equals("/wish")) {
                 Map<String, String> m = query(q);
                 String id = m.get("id"), name = m.get("n");

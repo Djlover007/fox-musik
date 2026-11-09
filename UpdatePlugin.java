@@ -1110,6 +1110,7 @@ public class UpdatePlugin extends Plugin {
     public void partyStart(PluginCall call) {
         PartyServer.html = call.getString("html", "");
         PartyServer.songs = call.getString("songs", "[]");
+        PartyServer.pin = call.getString("pin", "");
         try {
             PartyServer.start();
             String ip = PartyServer.ip();
@@ -1121,7 +1122,7 @@ public class UpdatePlugin extends Plugin {
             }
             String url = "http://" + ip + ":" + PartyServer.PORT + "/";
             r.put("url", url);
-            r.put("qr", PartyServer.qr(url));
+            r.put("qr", PartyServer.qr(PartyServer.pin.length() > 0 ? url + "?p=" + PartyServer.pin : url));
             call.resolve(r);
         } catch (Exception e) {
             call.reject(String.valueOf(e.getMessage()));
