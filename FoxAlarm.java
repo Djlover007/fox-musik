@@ -17,6 +17,7 @@ public class FoxAlarm extends BroadcastReceiver {
     static final String ACT = "de.foxmusik.app.ALARM";
     static final String CH = "fox_alarm";
     static volatile boolean pending = false;
+    static volatile String pendingId = "";
 
     private static int flags() {
         return PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
@@ -35,8 +36,12 @@ public class FoxAlarm extends BroadcastReceiver {
     }
 
     static String schedule(Context ctx, long at) {
+        return schedule(ctx, at, prefs(ctx).getString("id", ""));
+    }
+
+    static String schedule(Context ctx, long at, String id) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
-        prefs(ctx).edit().putLong("at", at).apply();
+        prefs(ctx).edit().putLong("at", at).putString("id", id == null ? "" : id).apply();
         try {
             am.setAlarmClock(new AlarmManager.AlarmClockInfo(at, openPi(ctx)), firePi(ctx));
             return "exact";
@@ -72,10 +77,12 @@ public class FoxAlarm extends BroadcastReceiver {
         if (!ACT.equals(a)) {
             return;
         }
+        String fid = prefs(ctx).getString("id", "");
         prefs(ctx).edit().remove("at").apply();
         pending = true;
+        pendingId = fid == null ? "" : fid;
         if (PlaybackPlugin.inst != null) {
-            PlaybackPlugin.emitData("alarm", "");
+            PlaybackPlugin.emitData("alarm", pendingId);
         }
         // Bildschirm einschalten und App zeigen (Vollbild-Benachrichtigung wie bei einem Wecker)
         try {

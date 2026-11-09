@@ -798,7 +798,7 @@ public class UpdatePlugin extends Plugin {
             FoxAlarm.cancel(getContext());
             o.put("mode", "off");
         } else {
-            o.put("mode", FoxAlarm.schedule(getContext(), at));
+            o.put("mode", FoxAlarm.schedule(getContext(), at, call.getString("id", "")));
         }
         call.resolve(o);
     }
@@ -807,6 +807,7 @@ public class UpdatePlugin extends Plugin {
     public void alarmPending(PluginCall call) {
         JSObject o = new JSObject();
         o.put("pending", FoxAlarm.pending);
+        o.put("id", FoxAlarm.pendingId);
         FoxAlarm.pending = false;
         try {
             ((android.app.NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE)).cancel(4244);
