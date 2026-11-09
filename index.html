@@ -683,6 +683,7 @@ async function addFiles(files){
 
 /* ---------- covers ---------- */
 function hue(seed){var h=0,t=String(seed||'x');for(var i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))%360;return h;}
+function covDrop(s){if(!s)return;var u=covUrls.get(s.id);if(u){URL.revokeObjectURL(u);covUrls.delete(s.id);}}
 function coverURL(s){
   if(s&&!s.cover&&s.coverUrl)return s.coverUrl;
   if(!s||!s.cover)return '';
@@ -1914,7 +1915,7 @@ function renderHead(){
       (info&&info.kind==='pl'?'<button class="ib" data-act="plmenu" aria-label="Playlist-Optionen">'+ic('more',1)+'</button>':'');
     $('#searchrow').hidden=true;
   }else{
-    h.innerHTML='<div class="brand"><h1>Fox Musik</h1><small>Design by <span>Mr.Fox</span></small></div><button class="ib" data-act="search" aria-pressed="'+searchOpen+'" aria-label="Suchen">'+ic('search')+'</button>'+(isNative()?'<button class="ib" data-act="scan" aria-label="Musik auf dem Handy neu suchen">'+ic('refresh')+'</button>':'')+'<button class="ib" data-act="settings" aria-label="Wiedergabe-Einstellungen">'+ic('sliders')+'</button><button class="ib" data-act="add" aria-label="Songs hinzufügen">'+ic('plus')+'</button>';
+    h.innerHTML='<div class="brand"><h1>Fox Musik</h1><small>Design by <span>Mr.Fox</span>'+(appVer?' · Version '+appVer.code:'')+'</small></div><button class="ib" data-act="search" aria-pressed="'+searchOpen+'" aria-label="Suchen">'+ic('search')+'</button>'+(isNative()?'<button class="ib" data-act="scan" aria-label="Musik auf dem Handy neu suchen">'+ic('refresh')+'</button>':'')+'<button class="ib" data-act="settings" aria-label="Wiedergabe-Einstellungen">'+ic('sliders')+'</button><button class="ib" data-act="add" aria-label="Songs hinzufügen">'+ic('plus')+'</button>';
     $('#searchrow').hidden=!searchOpen;
   }
 }
@@ -2220,7 +2221,7 @@ async function cvApply(list,url){
   var P=UPDP(), blob=null;
   if(P&&P.imageB64){var r=await P.imageB64({url:url});var bin=atob(r.data),u8=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);blob=new Blob([u8],{type:'image/jpeg'});}
   else{blob=await (await fetch(url)).blob();}
-  for(var k=0;k<list.length;k++){var s=list[k];s.cover=blob;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
+  for(var k=0;k<list.length;k++){var s=list[k];covDrop(s);s.cover=blob;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
   if(cur&&list.indexOf(cur)>-1){tintKey='';updateNow();pushNative(true);}
 }
 function cvGroup(s){var k=cvKey(s);return songs.filter(function(x){return cvKey(x)===k;});}
@@ -2263,7 +2264,7 @@ async function cvManual(id){
 function cvFile(){
   if(!cvPick)return;var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';
   inp.onchange=async function(){var f=inp.files&&inp.files[0];inp.remove();if(!f)return;
-    for(var k=0;k<cvPick.list.length;k++){var s=cvPick.list[k];s.cover=f;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
+    for(var k=0;k<cvPick.list.length;k++){var s=cvPick.list[k];covDrop(s);s.cover=f;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
     closeSheet();render();if(cur&&cvPick.list.indexOf(cur)>-1){tintKey='';updateNow();pushNative(true);}toast('Cover gespeichert');};
   document.body.appendChild(inp);inp.click();
 }
@@ -3055,6 +3056,12 @@ function UPDP(){
 async function loadVer(){
   var P=UPDP();if(!P||appVer)return;
   try{var i=await P.info();appVer={code:Number(i.versionCode),name:String(i.versionName||'')};}catch(e){}
+}
+async function verShow(){
+  await loadVer();if(!appVer)return;
+  var sp=$('#splash small');if(sp&&!/Version/.test(sp.textContent))sp.insertAdjacentHTML('beforeend',' · Version '+appVer.code);
+  renderHead();
+  try{var old=+localStorage.getItem('fox-ver')||0;if(old&&old<appVer.code)setTimeout(function(){toast('Aktualisiert auf Version '+appVer.code);},1800);localStorage.setItem('fox-ver',String(appVer.code));}catch(e){}
 }
 function repoName(){
   if(REPO.indexOf('__')!==0)return REPO;
@@ -4357,7 +4364,7 @@ render();
   setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   try{if(!localStorage.getItem('fox-d2')){localStorage.setItem('fox-d2','1');if(state.theme==='auto'){state.theme='dark';saveState();}}}catch(e){}
   applyTheme();applySpeed();if(needFx())silenceInit(audio);
-  if(isNative()){initNative();setTimeout(bkAuto,15000);setTimeout(devInit,1500);setTimeout(function(){pcRefreshAll(false);},20000);setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
+  if(isNative()){verShow();initNative();setTimeout(bkAuto,15000);setTimeout(devInit,1500);setTimeout(function(){pcRefreshAll(false);},20000);setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
 })();
 })();
 </script>
