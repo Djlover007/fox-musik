@@ -125,6 +125,16 @@ svg.i.f{fill:currentColor;stroke:none}
 .alsel{display:block;width:100%;margin-top:8px;height:46px;border-radius:10px;border:0;background:var(--surface);color:var(--fg);padding:0 12px;font-weight:600}
 .alwake{text-align:center}
 .al-time{font:800 64px/1 var(--font-display);letter-spacing:-.03em;margin:10px 0 6px}
+.pextra{gap:10px;align-items:center}
+.pextra .ib{color:var(--fg)}
+.pextra .ib svg{width:26px;height:26px}
+.qlist .ib[disabled]{opacity:.3}
+.fl{display:block;font-size:13px;color:var(--muted);margin:10px 0 0}
+.fl input{display:block;width:100%;margin-top:4px;height:46px;border-radius:10px;border:0;background:var(--surface);color:var(--fg);padding:0 12px;font-size:15px}
+.colgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:8px 0}
+.colc{display:flex;align-items:center;gap:10px;border:2px solid transparent;background:var(--surface);color:var(--fg);border-radius:12px;padding:12px;font-weight:600}
+.colc span{width:26px;height:26px;border-radius:50%}
+.colc.on{border-color:var(--fg)}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
 .nw-help b{font-weight:700}
@@ -411,6 +421,13 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
   <symbol id="i-radio" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2.5"/><path d="m7 8 9-5"/><circle cx="15.5" cy="14" r="2.6"/><path d="M6.5 12.5h4M6.5 15.5h4"/></symbol>
   <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M4 5h11M4 10h11M4 15h7"/><path d="M18 14.5V5l3 1.5"/><circle cx="16" cy="17" r="2.5"/></symbol>
   <symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.5 2M4 4.5 6.5 2.5M20 4.5l-2.5-2"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6h12M4 11h12M4 16h7"/><path d="M16 14.5v6l4.5-3z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="i-back15" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4.5h4.5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">15</text></symbol>
+  <symbol id="i-fwd15" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4.5h-4.5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">15</text></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></symbol>
 </svg>
 
@@ -454,7 +471,7 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
     <button class="ib skip" data-act="next" data-ic="next" data-f="1" aria-label="Nächster Titel"></button>
     <button class="ib" data-act="rep" id="pRep" aria-label="Wiederholen"></button>
   </div>
-  <div class="pextra"><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button></div>
+  <div class="pextra"><button class="ib" data-act="back15" id="pB15" aria-label="15 Sekunden zurück" hidden><svg class="i" aria-hidden="true"><use href="#i-back15"/></svg></button><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button><button class="pill" data-act="queue"><svg class="i" aria-hidden="true"><use href="#i-queue"/></svg>Warteschlange</button><button class="ib" data-act="fwd15" id="pF15" aria-label="15 Sekunden vor" hidden><svg class="i" aria-hidden="true"><use href="#i-fwd15"/></svg></button></div>
 </section>
 
 <div class="scrim" id="scrim" data-sa="cancel"></div>
@@ -504,7 +521,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},radioFav:[],rdIcons:{},alarm:null,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:6},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},radioFav:[],rdIcons:{},alarm:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:6},wish:[],spl:[],theme:'auto',autoUpd:true,speed:1,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -661,6 +678,7 @@ function loadSong(s,fx){
     fadeVol(audio,0,1,secs);
   }
   var p=audio.play();if(p&&p.catch)p.catch(function(){});
+  posRestore(s);
   setMedia(s);
   pushNative(true);
   updateNow();
@@ -740,6 +758,7 @@ function wireAudio(a){
       audio._counted=true;var st1=state.stats[cur.id]||(state.stats[cur.id]={n:0,last:0});st1.n++;st1.last=Date.now();saveStatsSoon();
     }
     if(lyrOpen)lyrTick();
+    posSave(false);
     sleepCheck();
     if(state.fade>0&&!audio.paused&&isFinite(audio.duration)&&audio.duration>state.fade*2+2&&audio.duration-audio.currentTime<=state.fade&&hasNext()){next(true,true);}
   });
@@ -750,7 +769,7 @@ function wireAudio(a){
     pushNative();
   });
   a.addEventListener('play',function(){if(a===audio){srcFoxStarted();updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
-  a.addEventListener('pause',function(){if(a===audio){updateTransport();pushNative();}});
+  a.addEventListener('pause',function(){if(a===audio){updateTransport();pushNative();posSave(true);}});
   a.addEventListener('ended',function(){if(a!==audio)return;if(cur&&cur.live){nwNote('Radio-Stream beendet, verbinde neu');setTimeout(function(){if(a===audio&&cur&&cur.live){a.src=cur.url;var p=a.play();if(p&&p.catch)p.catch(function(){});}},1500);return;}next(true);});
   a.addEventListener('error',function(){if(a===audio&&cur&&cur.url){nwNote('Audio-Fehler Code '+(a.error&&a.error.code)+' '+String(a.currentSrc||'').split('?')[0]);
     if(a._proxied){nwNote('Umweg fehlgeschlagen, spiele direkt (ohne Equalizer)');var o=audio;audio=newAudio(true);dropAudio(o);audio.src=cur.url;applySpeed();var pp=audio.play();if(pp&&pp.catch)pp.catch(function(){});a._handled=true;}}});
@@ -774,8 +793,8 @@ var EQ_P={
   'Entspannt':[2,1,0,-1,-2,-3,-4],
   'Leise hören':[6,4,1,0,1,3,5]
 };
-var eqIn=null, eqNodes=[], eqPre=null, eqBoost=null, eqLim=null;
-function needFx(){return !!(state.skip||(state.eq&&(state.eq.on||state.eq.boost>0)));}
+var eqIn=null, eqNodes=[], eqPre=null, eqBoost=null, eqLim=null, eqLev=null, eqLevG=null;
+function needFx(){return !!(state.skip||state.level||(state.eq&&(state.eq.on||state.eq.boost>0)));}
 // Neowake-Streams in der App ueber den eigenen Umweg laden, damit Klangeinstellungen wirken
 function nwSrc(s){return (isNative()&&/^https:/.test(s.url||''))?location.origin+'/_nwproxy?u='+encodeURIComponent(s.url):s.url;}
 function isStreamBypass(s){return !!(s&&(s.live||(s.url&&!isNative())));}
@@ -793,7 +812,8 @@ function eqBuild(){
   });
   eqBoost=actx.createGain();eqLim=actx.createDynamicsCompressor();
   eqLim.threshold.value=-1.5;eqLim.knee.value=0;eqLim.ratio.value=20;eqLim.attack.value=0.003;eqLim.release.value=0.2;
-  prev.connect(eqPre);eqPre.connect(eqBoost);eqBoost.connect(eqLim);eqLim.connect(actx.destination);
+  eqLev=actx.createDynamicsCompressor();eqLevG=actx.createGain();
+  prev.connect(eqPre);eqPre.connect(eqLev);eqLev.connect(eqLevG);eqLevG.connect(eqBoost);eqBoost.connect(eqLim);eqLim.connect(actx.destination);
   eqApply();
 }
 function eqApply(){
@@ -802,6 +822,11 @@ function eqApply(){
   eqNodes.forEach(function(n,i){var v=on?(g[i]||0):0;if(v>mx)mx=v;try{n.gain.setTargetAtTime(v,actx.currentTime,0.03);}catch(e){n.gain.value=v;}});
   var pre=Math.pow(10,-(mx*0.4)/20);
   try{eqPre.gain.setTargetAtTime(pre,actx.currentTime,0.03);}catch(e){eqPre.gain.value=pre;}
+  if(eqLev){
+    var L=state.level;
+    eqLev.threshold.value=L?-26:0;eqLev.knee.value=L?12:0;eqLev.ratio.value=L?3.5:1;eqLev.attack.value=0.02;eqLev.release.value=0.6;
+    try{eqLevG.gain.setTargetAtTime(L?Math.pow(10,7/20):1,actx.currentTime,0.1);}catch(e){eqLevG.gain.value=L?2.24:1;}
+  }
   var bg=Math.pow(10,((state.eq&&state.eq.boost)||0)/20);
   try{eqBoost.gain.setTargetAtTime(bg,actx.currentTime,0.05);}catch(e){eqBoost.gain.value=bg;}
 }
@@ -929,6 +954,7 @@ function updateNow(){
   bg.style.backgroundImage=u?'url('+u+')':'linear-gradient(160deg,hsl('+hue(cur.album||cur.title)+' 55% 55%),hsl('+(hue(cur.album||cur.title)+40)+' 58% 35%))';
   $('#tDur').textContent=fmtDur(cur,cur.duration);
   if(!miniSp())tintFor(cur);
+  longUi();
   updateFav();updateTransport();renderMain();
   if(lyrOpen)lyrRender();
 }
@@ -963,7 +989,9 @@ var SMART=[
   ['new','Neu hinzugefügt','star','Zuletzt hinzugefügte Titel','Hier erscheinen neue Titel, sobald sie in der App sind.'],
   ['top','Meistgespielt','chart','Deine meistgehörten Titel','Ein Titel zählt, sobald er mindestens 30 Sekunden gelaufen ist. Hör etwas Musik, dann füllt sich diese Liste.'],
   ['recent','Wiedergabe zuletzt','clock','Zuletzt gespielt','Du hast noch nichts abgespielt.'],
-  ['fav','Bevorzugte Titel','heart','Deine Lieblingstitel','Tippe im Player auf das Herz, um einen Titel hier zu speichern.']
+  ['fav','Bevorzugte Titel','heart','Deine Lieblingstitel','Tippe im Player auf das Herz, um einen Titel hier zu speichern.'],
+  ['long','Lange nicht gehört','clock','Seit über 30 Tagen nicht gespielt','Sobald du Musik eine Weile nicht gehört hast, taucht sie hier wieder auf.'],
+  ['never','Noch nie gehört','star','Titel, die du noch nie abgespielt hast','Du hast schon alles mindestens einmal gehört.']
 ];
 function smartDef(key){for(var i=0;i<SMART.length;i++)if(SMART[i][0]===key)return SMART[i];return null;}
 function smartList(key){
@@ -971,6 +999,8 @@ function smartList(key){
   if(key==='new')return a.sort(function(x,y){return (y.added||0)-(x.added||0);}).slice(0,100);
   if(key==='top')return a.filter(function(x){return st[x.id]&&st[x.id].n>0;}).sort(function(x,y){return st[y.id].n-st[x.id].n||st[y.id].last-st[x.id].last;}).slice(0,100);
   if(key==='recent')return a.filter(function(x){return st[x.id]&&st[x.id].last;}).sort(function(x,y){return st[y.id].last-st[x.id].last;}).slice(0,100);
+  if(key==='long'){var lim=Date.now()-30*864e5;return a.filter(function(x){return st[x.id]&&st[x.id].last&&st[x.id].last<lim;}).sort(function(x,y){return (st[y.id].n||0)-(st[x.id].n||0);}).slice(0,100);}
+  if(key==='never')return a.filter(function(x){return !(st[x.id]&&(st[x.id].n||st[x.id].last));}).sort(function(x,y){return (x.added||0)-(y.added||0);}).slice(0,150);
   return state.favs.map(byId).filter(Boolean);
 }
 var statT=null;
@@ -992,6 +1022,7 @@ function detailInfo(){
     var p=state.playlists.find(function(x){return x.id===d.key;});
     return p?{name:p.name,songs:plSongs(p),sub:'Playlist',kind:'pl'}:null;
   }
+  if(d.type==='fo'){var fl=sortedSongs().filter(function(s){return songDir(s)===d.key;});return fl.length?{name:dirName(d.key).split('/').pop(),songs:fl,sub:dirName(d.key),kind:'al'}:null;}
   if(d.type==='al'){var a=sortedSongs().filter(function(s){return (s.album||NOALBUM)===d.key;});return a.length?{name:d.key,songs:a,sub:(a[0].artist||NOARTIST),kind:'al'}:null;}
   if(d.type==='ar'){var r=sortedSongs().filter(function(s){return (s.artist||NOARTIST)===d.key;});return r.length?{name:d.key,songs:r,sub:'Interpret',kind:'ar'}:null;}
   return null;
@@ -1043,6 +1074,18 @@ function playlistsHTML(){
   h+=spotRow();
   state.playlists.forEach(function(p){h+=plRow(p.id,p.name,plSongs(p),'pl');});
   return h;
+}
+function songDir(s){var p=String(s.path||'');if(!p)return s.device?'':'In der App gespeichert';var i=p.lastIndexOf('/');return i>0?p.slice(0,i):'';}
+function dirName(d){if(d==='In der App gespeichert')return d;var x=d.replace(/^\/storage\/emulated\/0\/?/,'').replace(/^\/storage\/[^\/]+\//,'SD-Karte/');return x||'Hauptordner';}
+function foldersHTML(){
+  var g={}, keys=[];
+  songs.forEach(function(s){var d=songDir(s);if(!d)return;if(!g[d]){g[d]=[];keys.push(d);}g[d].push(s);});
+  if(!keys.length)return emptyHTML();
+  keys.sort(function(a,b){return dirName(a).localeCompare(dirName(b),'de');});
+  return keys.map(function(d){
+    var nm=dirName(d), last=nm.split('/').pop();
+    return '<div class="row"><button class="rowmain" data-act="open" data-type="fo" data-key="'+esc(d)+'"><div class="cov tile fav rc">'+ic('folder')+'</div><span class="rt"><b>'+esc(last)+'</b><small>'+esc(nm)+' · '+g[d].length+' Titel</small></span></button></div>';
+  }).join('');
 }
 function albumsHTML(){
   var g=groupBy('album',NOALBUM);
@@ -1581,12 +1624,13 @@ function renderMain(){
   else if(view.tab==='tracks')h=tracksHTML();
   else if(view.tab==='playlists')h=playlistsHTML();
   else if(view.tab==='albums')h=albumsHTML();
+  else if(view.tab==='folders')h=foldersHTML();
   else if(view.tab==='neowake')h=neowakeHTML();
   else if(view.tab==='radio')h=radioHTML();
   else h=artistsHTML();
   m.innerHTML=h;
 }
-var TABS=[['tracks','Titel'],['playlists','Playlists'],['albums','Alben'],['artists','Interpreten']], LIBT={tracks:1,playlists:1,albums:1,artists:1}, lastLib='tracks';
+var TABS=[['tracks','Titel'],['playlists','Playlists'],['albums','Alben'],['artists','Interpreten'],['folders','Ordner']], LIBT={tracks:1,playlists:1,albums:1,artists:1,folders:1}, lastLib='tracks';
 function renderTabs(){
   var t=$('#tabs');
   t.hidden=!!view.detail||!LIBT[view.tab];
@@ -2144,11 +2188,71 @@ function alarmStop(snooze){
 }
 function alarmCheck(){var P=UPDP();if(!P||!P.alarmPending)return;P.alarmPending().then(function(r){if(r&&r.pending)alarmFire();}).catch(function(){});}
 window.addEventListener('fox-alarm',function(){setTimeout(alarmCheck,600);});
+/* ---------- Warteschlange ---------- */
+function queueSheet(){
+  if(!cur||!queue.length){toast('Gerade läuft nichts.');return;}
+  var h='<div class="shead"><div class="rt"><b>Warteschlange</b><small>'+(queue.length-qi-1)+' Titel danach</small></div>'+(queue.length-qi>1?'<button class="pill" data-sa="qclear">Leeren</button>':'')+'</div><div class="qlist">';
+  queue.forEach(function(id,i){
+    var s=byId(id);if(!s||i<qi)return;
+    var now=i===qi;
+    h+='<div class="row'+(now?' now':'')+'"><button class="rowmain" data-sa="qjump" data-i="'+i+'">'+coverHTML(s,'rc')+'<span class="rt"><b>'+esc(s.title)+'</b><small>'+(now?'Läuft gerade':esc(s.artist||NOARTIST))+'</small></span></button>'+
+      (now?'':'<button class="ib" data-sa="qup" data-i="'+i+'" aria-label="Nach oben"'+(i===qi+1?' disabled':'')+'>'+ic('up')+'</button><button class="ib" data-sa="qdown" data-i="'+i+'" aria-label="Nach unten"'+(i===queue.length-1?' disabled':'')+'>'+ic('down')+'</button><button class="ib" data-sa="qdel" data-i="'+i+'" aria-label="Entfernen">'+ic('close')+'</button>')+'</div>';
+  });
+  openSheet(h+'</div>');
+}
+/* ---------- Titel bearbeiten ---------- */
+function editSheet(id){
+  var s=byId(id);if(!s)return;sctx={id:id};
+  openSheet('<div class="sform"><h3>Infos bearbeiten</h3>'+
+    '<label class="fl">Titel<input id="edT" value="'+esc(s.title)+'"></label>'+
+    '<label class="fl">Interpret<input id="edA" value="'+esc(s.artist&&s.artist!==NOARTIST?s.artist:'')+'"></label>'+
+    '<label class="fl">Album<input id="edL" value="'+esc(s.album&&s.album!==NOALBUM?s.album:'')+'"></label>'+
+    '<button class="btn" data-sa="edsave">Speichern</button><button class="btn ghost" data-sa="cancel">Abbrechen</button></div>');
+}
+async function editSave(){
+  var s=byId(sctx.id);if(!s)return;
+  var t=($('#edT').value||'').trim(), a=($('#edA').value||'').trim(), l=($('#edL').value||'').trim();
+  if(!t){toast('Der Titel darf nicht leer sein.');return;}
+  s.title=t;s.artist=a||NOARTIST;s.album=l||NOALBUM;s.edited=1;
+  if(!s.url)await dbPut('songs',s);
+  closeSheet();render();if(cur===s){updateNow();pushNative();}toast('Gespeichert');
+}
+/* ---------- Akzentfarben ---------- */
+var ACCENTS={orange:['Fuchs-Orange','#ff7a1a','#e8640c'],blau:['Blau','#4d8dff','#2f6be0'],gruen:['Grün','#2fd17d','#16a35c'],pink:['Pink','#ff4f9a','#e0307e'],lila:['Lila','#a77bff','#7c4ee6'],rot:['Rot','#ff5252','#d93636'],tuerkis:['Türkis','#22cbd2','#0f9aa1'],gold:['Gold','#f5b82e','#c98d00']};
+function applyAccent(){
+  var a=ACCENTS[state.accent]||ACCENTS.orange, r=document.documentElement, dark=isDark();
+  var c=dark?a[1]:a[2];
+  r.style.setProperty('--accent',c);
+  r.style.setProperty('--accent-soft',dark?'color-mix(in srgb,'+c+' 18%,transparent)':'color-mix(in srgb,'+c+' 16%,white)');
+  r.style.setProperty('--accent-ink',dark?'#140a02':'#ffffff');
+}
+function colorSheet(){
+  var h='<div class="shead"><div class="rt"><b>Akzentfarbe</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div><div class="colgrid">';
+  Object.keys(ACCENTS).forEach(function(k){var a=ACCENTS[k];h+='<button class="colc'+(state.accent===k?' on':'')+'" data-sa="accent" data-k="'+k+'"><span style="background:'+a[1]+'"></span>'+esc(a[0])+'</button>';});
+  openSheet(h+'</div>');
+}
+/* ---------- Hörbuch-Modus: Position merken, 15 s springen ---------- */
+function isLong(s){var d=(audio&&isFinite(audio.duration)&&audio.duration)||(s&&s.duration)||0;return !!(s&&!s.live&&d>=1200);}
+var posT=0;
+function posSave(force){
+  if(!cur||!isLong(cur)||!audio)return;
+  var t=audio.currentTime, d=audio.duration||cur.duration||0;
+  if(!force&&Date.now()-posT<8000)return;posT=Date.now();
+  if(t>30&&(!d||t<d-30))state.pos[cur.id]=Math.round(t);else delete state.pos[cur.id];
+  saveStatsSoon();
+}
+function posRestore(s){
+  var p=state.pos&&state.pos[s.id];if(!p)return;
+  var a=audio, once=function(){a.removeEventListener('loadedmetadata',once);try{if(p<(a.duration||1e9)-20){a.currentTime=p;toast('Weiter bei '+fmt(p));}}catch(e){}};
+  a.addEventListener('loadedmetadata',once);
+}
+function longUi(){var l=isLong(cur);var b=$('#pB15'),f=$('#pF15');if(b)b.hidden=!l;if(f)f.hidden=!l;}
 function songSheet(id){
   var s=byId(id);if(!s)return;
   sctx={id:id};
   var isFav=state.favs.indexOf(id)>-1;
   var h='<div class="shead">'+coverHTML(s,'mc')+'<div class="rt"><b>'+esc(s.title)+'</b><small>'+esc(s.artist||NOARTIST)+'</small></div></div>';
+  if(!s.live&&!s.url)h+=sItem('edit','edit','Infos bearbeiten');
   if(!s.live)h+=sItem('cvsearch','search',s.cover?'Anderes Cover suchen':'Cover suchen');
   h+=sItem('next','list','Als Nächstes abspielen');
   h+=sItem('addpl','listplus','Zu Playlist hinzufügen');
@@ -2868,6 +2972,7 @@ function isDark(){
   return !!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
 }
 function applyTheme(){
+  setTimeout(applyAccent,0);
   var r=document.documentElement;
   if(state.theme==='dark'||state.theme==='light')r.setAttribute('data-theme',state.theme);else r.removeAttribute('data-theme');
   try{localStorage.setItem('fox-theme',state.theme);}catch(e){}
@@ -2883,6 +2988,7 @@ function pct(v,min,max){return ((v-min)/(max-min)*100).toFixed(1)+'%';}
 function settingsSheet(){
   var h='<div class="shead"><div class="rt"><b>Wiedergabe</b></div></div><div class="set">';
   h+='<div class="srow"><button class="sleepbtn" data-sa="eq"><b>Equalizer & Lautstärke</b><small>'+(state.eq.on?esc(state.eq.p):'Equalizer aus')+(state.eq.boost?' · Boost +'+state.eq.boost+' dB':'')+'</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="colors"><b>Akzentfarbe</b><small>'+esc((ACCENTS[state.accent]||ACCENTS.orange)[0])+'</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="alarm"><b>Musik-Wecker</b><small>'+esc(alLabel(state.alarm))+'</small></button></div>';
   var miss=cvMissing().length;
   h+='<div class="srow"><button class="sleepbtn" data-sa="cvbatch"><b>Fehlende Cover suchen</b><small>'+(miss?miss+' Titel ohne Cover · online suchen':'Alle Titel haben ein Cover')+'</small></button></div>';
@@ -2909,6 +3015,7 @@ function eqSheet(){
   var h='<div class="shead"><div class="rt"><b>Equalizer</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
   var act=cur&&audio&&audio._an?'Klangkette aktiv für den laufenden Titel':(cur?'Wirkt ab dem nächsten Titel':'Wirkt sofort beim Abspielen');
   h+='<div class="srow"><b>Lautstärke-Boost</b><small>Macht leise Titel lauter, ein Begrenzer verhindert Übersteuern</small><div class="eqp">'+[0,3,6,9,12].map(function(v){return '<button class="eqc'+((e.boost||0)===v?' on':'')+'" data-sa="eqboost" data-v="'+v+'">'+(v?'+'+v+' dB':'Aus')+'</button>';}).join('')+'</div></div>';
+  h+='<div class="srow line"><div><b>Lautstärke angleichen</b><small>Leise und laute Titel klingen ähnlich laut</small></div><input type="checkbox" class="sw" data-set="level"'+(state.level?' checked':'')+' aria-label="Lautstärke angleichen"></div>';
   h+='<div class="srow line"><div><b>Equalizer an</b><small>'+act+'</small></div><input type="checkbox" class="sw" data-set="eqon"'+(e.on?' checked':'')+' aria-label="Equalizer an"></div>';
   h+='<div class="eqp">'+Object.keys(EQ_P).map(function(k){return '<button class="eqc'+(e.p===k?' on':'')+'" data-sa="eqp" data-p="'+esc(k)+'">'+esc(k)+'</button>';}).join('')+(e.p==='Eigene'?'<button class="eqc on" data-sa="eqp" data-p="Eigene">Eigene</button>':'')+'</div>';
   h+='<div class="eqb'+(e.on?'':' off')+'">'+EQ_F.map(function(f,i){
@@ -2951,11 +3058,12 @@ function onSetting(e){
     else if(k==='alvol'){a.vol=parseInt(el.value,10)||70;el.style.setProperty('--p',((a.vol-10)/90*100)+'%');var av=$('#alVol');if(av)av.textContent=a.vol+' %';}
     if(e.type==='change'){saveState();alSchedule(!(k==='alon'||k==='altime')||!a.on);var lb=$('#alLbl');if(lb)lb.textContent=alLabel(a);var sw=document.querySelector('[data-set="alon"]');if(sw)sw.checked=a.on;}
   }
+  else if(k==='level'){state.level=el.checked;if(state.level&&!isStreamBypass(cur))silenceInit(audio);eqApply();}
   else if(k==='eqon'){state.eq.on=el.checked;if(state.eq.on&&!isStreamBypass(cur))silenceInit(audio);eqApply();var bx=document.querySelector('.eqb');if(bx)bx.classList.toggle('off',!state.eq.on);}
   else if(k==='eqb'){var bi=parseInt(el.dataset.i,10),bv=parseInt(el.value,10);state.eq.g[bi]=bv;state.eq.p='Eigene';if(!state.eq.on){state.eq.on=true;var sw=document.querySelector('[data-set="eqon"]');if(sw)sw.checked=true;var bx2=document.querySelector('.eqb');if(bx2)bx2.classList.remove('off');}if(!isStreamBypass(cur))silenceInit(audio);el.style.setProperty('--p',((bv+12)/24*100)+'%');var ev=$('#eqv'+bi);if(ev)ev.textContent=(bv>0?'+':'')+bv+' dB';eqApply();[].slice.call(document.querySelectorAll('.eqc')).forEach(function(c){c.classList.remove('on');});}
   else if(k==='dark'){state.theme=el.checked?'dark':'light';applyTheme();}
   else if(k==='autoupd'){state.autoUpd=el.checked;if(state.autoUpd)autoCheck();}
-  if(e.type==='change'||k==='skip'||k==='lock'||k==='autoupd'||k==='dark'||k==='eqon'){saveState();pushNative();}
+  if(e.type==='change'||k==='skip'||k==='lock'||k==='autoupd'||k==='dark'||k==='eqon'||k==='level'){saveState();pushNative();}
 }
 function createPlaylist(){
   var inp=$('#plname'), name=(inp&&inp.value||'').trim();
@@ -3003,6 +3111,15 @@ function handleSheet(act,el){
     }
     case 'next':queueNext(sctx.id);closeSheet();break;
     case 'cvsearch':cvManual(sctx.id);break;
+    case 'edit':editSheet(sctx.id);break;
+    case 'edsave':editSave();break;
+    case 'qjump':{var qj=parseInt(el.dataset.i,10);if(qj!==qi){qi=qj;loadSong(byId(queue[qi]));}closeSheet();break;}
+    case 'qup':{var a1=parseInt(el.dataset.i,10);if(a1>qi+1){var t1=queue[a1];queue[a1]=queue[a1-1];queue[a1-1]=t1;}queueSheet();break;}
+    case 'qdown':{var a2=parseInt(el.dataset.i,10);if(a2<queue.length-1){var t2=queue[a2];queue[a2]=queue[a2+1];queue[a2+1]=t2;}queueSheet();break;}
+    case 'qdel':{var a3=parseInt(el.dataset.i,10);queue.splice(a3,1);queueSheet();break;}
+    case 'qclear':queue=queue.slice(0,qi+1);queueSheet();break;
+    case 'colors':colorSheet();break;
+    case 'accent':state.accent=el.dataset.k;applyAccent();saveState();colorSheet();break;
     case 'alarm':alarmSheet();break;
     case 'alday':{var a=state.alarm||(state.alarm=alDef());var di=parseInt(el.dataset.i,10);a.days[di]=a.days[di]?0:1;saveState();if(a.on)alSchedule(true);alarmSheet();break;}
     case 'altest':closeSheet();alarmFire();break;
@@ -3111,6 +3228,9 @@ document.addEventListener('click',function(e){
     case 'rep':cycleRepeat();break;
     case 'pfav':if(cur)toggleFav(cur.id);break;
     case 'pmore':if(cur){sctx={};songSheet(cur.id);}break;
+    case 'queue':queueSheet();break;
+    case 'back15':if(audio){audio.currentTime=Math.max(0,audio.currentTime-15);pushNative();}break;
+    case 'fwd15':if(audio){audio.currentTime=Math.min((audio.duration||1e9)-1,audio.currentTime+15);pushNative();}break;
     case 'lyrics':lyrOpen=!lyrOpen;$('#pLyr').classList.toggle('pri',lyrOpen);lyrKey='';lyrRender(true);break;
   }
 });
@@ -3377,7 +3497,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=6;}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=6;}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.speed=saved.speed||1;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
