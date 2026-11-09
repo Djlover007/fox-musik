@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java', 'RadioRec.java', 'FoxWidgetLarge.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java', 'RadioRec.java', 'FoxWidgetLarge.java', 'PartyServer.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -140,6 +140,18 @@ fs.writeFileSync(manifest, xml);
     fs.writeFileSync(gradle, g2);
   }
   console.log('Signierschlüssel fest eingetragen');
+}
+
+// ---- QR-Code-Bibliothek fuer den Party-Modus ----
+{
+  const gradle = path.join('android', 'app', 'build.gradle');
+  const g = fs.readFileSync(gradle, 'utf8');
+  if (!g.includes('zxing')) {
+    const g2 = g.replace(/^dependencies\s*\{\s*\n/m, (m) => m + "    implementation 'com.google.zxing:core:3.5.3'\n");
+    if (g2 === g) { console.error('FEHLER: dependencies { } in build.gradle nicht gefunden'); process.exit(1); }
+    fs.writeFileSync(gradle, g2);
+  }
+  console.log('QR-Code-Bibliothek eingetragen');
 }
 
 const res = path.join('android', 'app', 'src', 'main', 'res');

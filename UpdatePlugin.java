@@ -10,7 +10,12 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -1073,5 +1078,162 @@ public class UpdatePlugin extends Plugin {
         } catch (Exception e) {
             call.reject(String.valueOf(e.getMessage()));
         }
+    }
+
+    // ---- Bild teilen (Jahresrueckblick) ----
+    @PluginMethod
+    public void shareImage(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            byte[] data = android.util.Base64.decode(call.getString("b64", ""), android.util.Base64.DEFAULT);
+            File f = new File(ctx.getCacheDir(), call.getString("name", "fox-rueckblick.png"));
+            FileOutputStream fo = new FileOutputStream(f);
+            fo.write(data);
+            fo.close();
+            Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".foxupdate", f);
+            Intent s = new Intent(Intent.ACTION_SEND);
+            s.setType("image/png");
+            s.putExtra(Intent.EXTRA_STREAM, uri);
+            s.putExtra(Intent.EXTRA_TEXT, call.getString("text", ""));
+            s.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent ch = Intent.createChooser(s, call.getString("title", "Teilen"));
+            ch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            ctx.startActivity(ch);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    // ---- Party-Modus ----
+    @PluginMethod
+    public void partyStart(PluginCall call) {
+        PartyServer.html = call.getString("html", "");
+        PartyServer.songs = call.getString("songs", "[]");
+        try {
+            PartyServer.start();
+            String ip = PartyServer.ip();
+            JSObject r = new JSObject();
+            if (ip == null) {
+                r.put("url", "");
+                call.resolve(r);
+                return;
+            }
+            String url = "http://" + ip + ":" + PartyServer.PORT + "/";
+            r.put("url", url);
+            r.put("qr", PartyServer.qr(url));
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void partyData(PluginCall call) {
+        if (call.hasOption("songs")) {
+            PartyServer.songs = call.getString("songs", "[]");
+        }
+        if (call.hasOption("now")) {
+            PartyServer.now = call.getString("now", "{}");
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void partyStop(PluginCall call) {
+        PartyServer.stop();
+        call.resolve();
+    }
+
+    // ---- Audio-Ausgang erkennen (Equalizer je Kopfhoerer) ----
+    private static String lastDev = "";
+    private AudioDeviceCallback devCb;
+
+    @Override
+    public void load() {
+        try {
+            if (Build.VERSION.SDK_INT >= 23) {
+                final Context ctx = getContext();
+                AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                devCb = new AudioDeviceCallback() {
+                    @Override
+                    public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                        devChanged(ctx);
+                    }
+
+                    @Override
+                    public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                        devChanged(ctx);
+                    }
+                };
+                am.registerAudioDeviceCallback(devCb, new Handler(Looper.getMainLooper()));
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+    }
+
+    private static void devChanged(Context ctx) {
+        String n = outName(ctx);
+        if (!n.equals(lastDev)) {
+            lastDev = n;
+            PlaybackPlugin.emitData("audiodev", n);
+        }
+    }
+
+    static String outName(Context ctx) {
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            if (Build.VERSION.SDK_INT < 23) {
+                if (am.isBluetoothA2dpOn()) {
+                    return "Bluetooth-Gerät";
+                }
+                return am.isWiredHeadsetOn() ? "Kopfhörer (Kabel)" : "Handy-Lautsprecher";
+            }
+            AudioDeviceInfo best = null;
+            int bp = 0;
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                int t = d.getType(), p = 0;
+                if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                    p = 5;
+                } else if (Build.VERSION.SDK_INT >= 31 && (t == AudioDeviceInfo.TYPE_BLE_HEADSET || t == AudioDeviceInfo.TYPE_BLE_SPEAKER)) {
+                    p = 5;
+                } else if (t == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                    p = 4;
+                } else if (t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || t == AudioDeviceInfo.TYPE_WIRED_HEADSET) {
+                    p = 3;
+                } else if (t == AudioDeviceInfo.TYPE_USB_DEVICE) {
+                    p = 2;
+                }
+                if (p > bp) {
+                    bp = p;
+                    best = d;
+                }
+            }
+            if (best == null) {
+                return "Handy-Lautsprecher";
+            }
+            int t = best.getType();
+            if (t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || t == AudioDeviceInfo.TYPE_WIRED_HEADSET) {
+                return "Kopfhörer (Kabel)";
+            }
+            CharSequence pn = best.getProductName();
+            String n = pn == null ? "" : pn.toString().trim();
+            if (n.isEmpty() || n.equals(Build.MODEL)) {
+                return bp == 5 ? "Bluetooth-Gerät" : "USB-Kopfhörer";
+            }
+            return n;
+        } catch (Exception e) {
+            return "Handy-Lautsprecher";
+        }
+    }
+
+    @PluginMethod
+    public void audioDevice(PluginCall call) {
+        String n = outName(getContext());
+        lastDev = n;
+        JSObject r = new JSObject();
+        r.put("name", n);
+        call.resolve(r);
     }
 }
