@@ -488,6 +488,7 @@ public class UpdatePlugin extends Plugin {
         final String id = call.getString("id", "");
         final String name = clean(call.getString("name", "Neowake"));
         final String album = clean(call.getString("album", "Neowake"));
+        final String folder = clean(call.getString("folder", "Neowake"));
         final String tagTitle = call.getString("name", "");
         final String tagAlbum = call.getString("album", "");
         final String tagArtist = call.getString("artist", "Neowake");
@@ -548,7 +549,7 @@ public class UpdatePlugin extends Plugin {
                         v.put(MediaStore.Audio.Media.DISPLAY_NAME, file);
                         v.put(MediaStore.Audio.Media.MIME_TYPE, mime);
                         v.put(MediaStore.Audio.Media.TITLE, name);
-                        v.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Neowake/" + album);
+                        v.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/" + folder + "/" + album);
                         v.put(MediaStore.Audio.Media.IS_MUSIC, 1);
                         v.put(MediaStore.Audio.Media.IS_PENDING, 1);
                         item = ctx.getContentResolver().insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
@@ -558,7 +559,7 @@ public class UpdatePlugin extends Plugin {
                         }
                         os = ctx.getContentResolver().openOutputStream(item);
                     } else {
-                        File dir = new File(ctx.getExternalFilesDir(Environment.DIRECTORY_MUSIC), "Neowake/" + album);
+                        File dir = new File(ctx.getExternalFilesDir(Environment.DIRECTORY_MUSIC), folder + "/" + album);
                         dir.mkdirs();
                         legacy = new File(dir, file);
                         os = new FileOutputStream(legacy);
@@ -813,6 +814,110 @@ public class UpdatePlugin extends Plugin {
             // ignore
         }
         call.resolve(o);
+    }
+
+    // ---- Teilen ----
+    @PluginMethod
+    public void shareText(PluginCall call) {
+        Intent s = new Intent(Intent.ACTION_SEND);
+        s.setType("text/plain");
+        s.putExtra(Intent.EXTRA_TEXT, call.getString("text", ""));
+        Intent ch = Intent.createChooser(s, call.getString("title", "Teilen"));
+        ch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(ch);
+        call.resolve();
+    }
+
+    // ---- Radio aufnehmen ----
+    @PluginMethod
+    public void recStart(PluginCall call) {
+        boolean ok = RadioRec.start(getContext(), call.getString("url", ""), call.getString("name", "Radio"));
+        JSObject o = new JSObject();
+        o.put("ok", ok);
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void recStop(PluginCall call) {
+        RadioRec.stop = true;
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void recState(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("running", RadioRec.running);
+        o.put("bytes", RadioRec.bytes);
+        o.put("seconds", RadioRec.started > 0 ? (System.currentTimeMillis() - RadioRec.started) / 1000 : 0);
+        o.put("file", RadioRec.file);
+        o.put("error", RadioRec.error);
+        call.resolve(o);
+    }
+
+    // ---- Automatische Sicherung (Speicherort frei waehlbar, z. B. Google Drive) ----
+    @PluginMethod
+    public void backupPick(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, "fox-musik-sicherung.json");
+        startActivityForResult(call, i, "backupPicked");
+    }
+
+    @ActivityCallback
+    private void backupPicked(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        Intent d = result.getData();
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || d == null || d.getData() == null) {
+            call.reject("abgebrochen");
+            return;
+        }
+        Uri u = d.getData();
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (Exception ignore) {
+            // nicht jeder Anbieter erlaubt dauerhafte Rechte
+        }
+        getContext().getSharedPreferences("fox_backup", Context.MODE_PRIVATE).edit().putString("uri", u.toString()).apply();
+        JSObject o = new JSObject();
+        o.put("uri", u.toString());
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void backupWrite(PluginCall call) {
+        String us = getContext().getSharedPreferences("fox_backup", Context.MODE_PRIVATE).getString("uri", "");
+        if (us == null || us.isEmpty()) {
+            call.reject("kein Speicherort");
+            return;
+        }
+        try {
+            OutputStream os = getContext().getContentResolver().openOutputStream(Uri.parse(us), "wt");
+            if (os == null) {
+                throw new Exception("nicht beschreibbar");
+            }
+            os.write(call.getString("text", "").getBytes("UTF-8"));
+            os.close();
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    @PluginMethod
+    public void backupInfo(PluginCall call) {
+        String us = getContext().getSharedPreferences("fox_backup", Context.MODE_PRIVATE).getString("uri", "");
+        JSObject o = new JSObject();
+        o.put("uri", us == null ? "" : us);
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void backupClear(PluginCall call) {
+        getContext().getSharedPreferences("fox_backup", Context.MODE_PRIVATE).edit().remove("uri").apply();
+        call.resolve();
     }
 
     @PluginMethod

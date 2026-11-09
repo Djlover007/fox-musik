@@ -428,6 +428,9 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
   <symbol id="i-back15" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4.5h4.5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">15</text></symbol>
   <symbol id="i-fwd15" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4.5h-4.5"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">15</text></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="m8.2 10.8 7.6-4.1M8.2 13.2l7.6 4.1"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="currentColor"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-8A6 6 0 0 0 6.6 9.4 4.6 4.6 0 0 0 7 18.5z"/><path d="m9.5 13.5 2.5 2.5 3.5-4"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></symbol>
 </svg>
 
@@ -471,7 +474,7 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
     <button class="ib skip" data-act="next" data-ic="next" data-f="1" aria-label="Nächster Titel"></button>
     <button class="ib" data-act="rep" id="pRep" aria-label="Wiederholen"></button>
   </div>
-  <div class="pextra"><button class="ib" data-act="back15" id="pB15" aria-label="15 Sekunden zurück" hidden><svg class="i" aria-hidden="true"><use href="#i-back15"/></svg></button><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button><button class="pill" data-act="queue"><svg class="i" aria-hidden="true"><use href="#i-queue"/></svg>Warteschlange</button><button class="ib" data-act="fwd15" id="pF15" aria-label="15 Sekunden vor" hidden><svg class="i" aria-hidden="true"><use href="#i-fwd15"/></svg></button></div>
+  <div class="pextra"><button class="ib" data-act="back15" id="pB15" aria-label="15 Sekunden zurück" hidden><svg class="i" aria-hidden="true"><use href="#i-back15"/></svg></button><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button><button class="pill" data-act="rec" id="pRec" hidden><svg class="i" aria-hidden="true"><use href="#i-rec"/></svg><span>Aufnehmen</span></button><button class="pill" data-act="queue"><svg class="i" aria-hidden="true"><use href="#i-queue"/></svg>Warteschlange</button><button class="ib" data-act="fwd15" id="pF15" aria-label="15 Sekunden vor" hidden><svg class="i" aria-hidden="true"><use href="#i-fwd15"/></svg></button></div>
 </section>
 
 <div class="scrim" id="scrim" data-sa="cancel"></div>
@@ -668,6 +671,7 @@ function loadSong(s,fx){
     else if(!remote&&!audio._an&&needFx()){var o2=audio;audio=newAudio();dropAudio(o2);}
   }
   audio._counted=false;
+  if(recOn&&s.url!==recUrl){var Pr=UPDP();if(Pr&&Pr.recStop)Pr.recStop();}
   if(s.live){s.nowTitle='';s.artist=rdSub(s.radio||{});audio.src=s.url;audio._proxied=false;rdClick(s.radio||{});rdNowStart();}
   else if(s.url){audio.src=nwSrc(s);audio._proxied=audio.src!==s.url;}
   else if(s.device){audio.src=devUrl(s);}
@@ -954,7 +958,7 @@ function updateNow(){
   bg.style.backgroundImage=u?'url('+u+')':'linear-gradient(160deg,hsl('+hue(cur.album||cur.title)+' 55% 55%),hsl('+(hue(cur.album||cur.title)+40)+' 58% 35%))';
   $('#tDur').textContent=fmtDur(cur,cur.duration);
   if(!miniSp())tintFor(cur);
-  longUi();
+  longUi();recUi();
   updateFav();updateTransport();renderMain();
   if(lyrOpen)lyrRender();
 }
@@ -2188,6 +2192,58 @@ function alarmStop(snooze){
 }
 function alarmCheck(){var P=UPDP();if(!P||!P.alarmPending)return;P.alarmPending().then(function(r){if(r&&r.pending)alarmFire();}).catch(function(){});}
 window.addEventListener('fox-alarm',function(){setTimeout(alarmCheck,600);});
+/* ---------- Teilen ---------- */
+function shareSong(s){
+  if(!s)return;
+  var q=s.live?(s.nowTitle||s.title):((s.artist&&s.artist!==NOARTIST?s.artist+' ':'')+s.title), txt;
+  if(s.live)txt='Ich höre gerade '+s.title+' auf Fox Musik'+(s.nowTitle?'\n🎵 '+s.nowTitle:'')+(s.radio&&s.radio.homepage?'\n'+s.radio.homepage:'');
+  else txt='🎵 '+s.title+(s.artist&&s.artist!==NOARTIST?' – '+s.artist:'')+'\n\nSpotify: https://open.spotify.com/search/'+encodeURIComponent(q)+'\nYouTube: https://www.youtube.com/results?search_query='+encodeURIComponent(q)+'\n\nGeteilt mit Fox Musik';
+  var P=UPDP();
+  if(P&&P.shareText){P.shareText({text:txt,title:'Titel teilen'}).catch(function(){});return;}
+  if(navigator.share){navigator.share({text:txt}).catch(function(){});return;}
+  try{navigator.clipboard.writeText(txt);toast('In die Zwischenablage kopiert');}catch(e){}
+}
+/* ---------- Radio aufnehmen ---------- */
+var recT=null, recOn=false, recUrl='';
+function recUi(){
+  var b=$('#pRec');if(!b)return;
+  b.hidden=!(cur&&cur.live&&isNative());
+  b.classList.toggle('pri',recOn);
+}
+async function recToggle(){
+  var P=UPDP();if(!P||!P.recStart||!cur||!cur.live)return;
+  if(recOn){await P.recStop();recOn=false;clearInterval(recT);recUi();var lb=$('#pRec span');if(lb)lb.textContent='Aufnehmen';toast('Aufnahme gespeichert in Musik → Fox Radio');setTimeout(function(){scanDevice(false);},2500);return;}
+  var r=await P.recStart({url:cur.url,name:cur.title});
+  if(!r||!r.ok){toast('Es läuft schon eine Aufnahme.');return;}
+  recOn=true;recUrl=cur.url;recUi();toast('Aufnahme läuft');
+  clearInterval(recT);recT=setInterval(async function(){
+    try{var st=await P.recState();var lb=$('#pRec span');
+      if(!st.running){clearInterval(recT);recOn=false;recUi();if(lb)lb.textContent='Aufnehmen';if(st.error)toast('Aufnahme beendet: '+st.error);return;}
+      if(lb)lb.textContent='Stopp · '+fmt(st.seconds)+' · '+(st.bytes/1048576).toFixed(1).replace('.',',')+' MB';
+    }catch(e){}
+  },1000);
+}
+/* ---------- Automatische Sicherung ---------- */
+var bkUri=null;
+async function bkInfo(){var P=UPDP();if(!P||!P.backupInfo)return '';try{var r=await P.backupInfo();bkUri=r.uri||'';}catch(e){bkUri='';}return bkUri;}
+function bkWhere(u){u=String(u||'');if(/google\.android\.apps\.docs/.test(u))return 'Google Drive';if(/downloads/i.test(u))return 'Downloads';if(/externalstorage/.test(u))return 'Handy-Speicher';return u?'Gewählter Ort':'';}
+async function bkRun(manual){
+  var P=UPDP();if(!P||!P.backupWrite)return;
+  if(bkUri===null)await bkInfo();
+  if(!bkUri){if(manual)toast('Wähle zuerst einen Speicherort.');return;}
+  try{await P.backupWrite({text:backupText()});state.bkLast=Date.now();saveState();if(manual)toast('Gesichert ('+bkWhere(bkUri)+')');}
+  catch(e){if(manual)toast('Sicherung fehlgeschlagen: '+spMsg(e)+'. Wähle den Speicherort neu.');}
+}
+function bkAuto(){if(!isNative())return;bkInfo().then(function(u){if(u&&Date.now()-(state.bkLast||0)>20*3600e3)bkRun(false);});}
+async function bkSheet(){
+  await bkInfo();
+  var h='<div class="shead"><div class="rt"><b>Automatische Sicherung</b></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
+  h+='<div class="srow"><b>'+(bkUri?'An · '+esc(bkWhere(bkUri)):'Aus')+'</b><small>'+(bkUri?(state.bkLast?'Zuletzt: '+new Date(state.bkLast).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Noch keine Sicherung'):'Fox Musik sichert Favoriten, Playlists, Sender und Einstellungen einmal am Tag in eine Datei.')+'</small></div>';
+  h+='<button class="sitem" data-sa="bkpick">'+ic('cloud')+'<span>'+(bkUri?'Anderen Speicherort wählen':'Speicherort wählen (z. B. Google Drive)')+'</span></button>';
+  if(bkUri)h+='<button class="sitem" data-sa="bknow">'+ic('refresh')+'<span>Jetzt sichern</span></button><button class="sitem" data-sa="bkoff">'+ic('close')+'<span>Ausschalten</span></button>';
+  h+='<p class="nw-sub" style="margin:8px 2px 0">Im nächsten Fenster links oben auf ☰ tippen und „Drive“ wählen, um in Google Drive zu sichern. Zum Zurückholen: Einstellungen → „Sicherung laden“ und die Datei wählen.</p>';
+  openSheet(h);
+}
 /* ---------- Warteschlange ---------- */
 function queueSheet(){
   if(!cur||!queue.length){toast('Gerade läuft nichts.');return;}
@@ -2252,6 +2308,7 @@ function songSheet(id){
   sctx={id:id};
   var isFav=state.favs.indexOf(id)>-1;
   var h='<div class="shead">'+coverHTML(s,'mc')+'<div class="rt"><b>'+esc(s.title)+'</b><small>'+esc(s.artist||NOARTIST)+'</small></div></div>';
+  h+=sItem('share','share','Teilen');
   if(!s.live&&!s.url)h+=sItem('edit','edit','Infos bearbeiten');
   if(!s.live)h+=sItem('cvsearch','search',s.cover?'Anderes Cover suchen':'Cover suchen');
   h+=sItem('next','list','Als Nächstes abspielen');
@@ -2884,7 +2941,7 @@ function spotEmbedHTML(id){
 
 /* ---------- Sicherung: Favoriten, Playlists, Zähler, Einstellungen ---------- */
 function nk(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
-async function exportBackup(){
+function backupText(){
   var all={};
   function note(id){if(all[id])return;var s=byId(id);if(s)all[id]={t:s.title,a:s.artist||'',d:Math.round(s.duration||0)};}
   state.favs.forEach(note);
@@ -2892,8 +2949,12 @@ async function exportBackup(){
   Object.keys(state.stats||{}).forEach(note);
   var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
     radioFav:state.radioFav||[],
+    alarm:state.alarm,pos:state.pos,accent:state.accent,level:state.level,
     settings:{eq:state.eq,speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
-  var text=JSON.stringify(data), name='fox-musik-sicherung-'+new Date().toISOString().slice(0,10)+'.json';
+  return JSON.stringify(data);
+}
+async function exportBackup(){
+  var text=backupText(), name='fox-musik-sicherung-'+new Date().toISOString().slice(0,10)+'.json';
   var P=UPDP();
   try{
     if(P){
@@ -2951,6 +3012,10 @@ async function applyBackup(text){
     var o=state.stats[m]||(state.stats[m]={n:0,last:0});
     o.n=Math.max(o.n||0,st[id].n||0);o.last=Math.max(o.last||0,st[id].last||0);
   });
+  if(d.alarm&&!state.alarm)state.alarm=d.alarm;
+  if(d.pos)Object.keys(d.pos).forEach(function(k){if(!state.pos[k])state.pos[k]=d.pos[k];});
+  if(d.accent){state.accent=d.accent;applyAccent();}
+  if(typeof d.level==='boolean')state.level=d.level;
   (d.radioFav||[]).forEach(function(r){if(r&&r.uuid&&!state.radioFav.some(function(x){return x.uuid===r.uuid;}))state.radioFav.push(r);});
   (d.spl||[]).forEach(function(p){if(p&&p.id&&!state.spl.some(function(x){return x.id===p.id;}))state.spl.push(p);});
   var se=d.settings||{};
@@ -3004,6 +3069,7 @@ function settingsSheet(){
   }
   h+='<div class="srow line"><div><b>Dunkler Modus</b><small>'+(state.theme==='auto'?'Folgt gerade dem Handy':'Von dir eingestellt')+'</small></div><input type="checkbox" class="sw" data-set="dark"'+(isDark()?' checked':'')+' aria-label="Dunkler Modus"></div>';
   if(state.theme!=='auto')h+='<div class="srow"><button class="sleepbtn" data-sa="themeauto"><b>Wie das Handy</b><small>Hell oder dunkel automatisch übernehmen</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="autobk"><b>Automatische Sicherung</b><small>Täglich in Google Drive oder auf dem Handy</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="bkexport"><b>Sicherung erstellen</b><small>Favoriten, Playlists und Zähler als Datei speichern</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="bkimport"><b>Sicherung laden</b><small>Daten aus einer Sicherungsdatei zurückholen</small></button></div>';
   h+='</div>';
@@ -3112,6 +3178,11 @@ function handleSheet(act,el){
     case 'next':queueNext(sctx.id);closeSheet();break;
     case 'cvsearch':cvManual(sctx.id);break;
     case 'edit':editSheet(sctx.id);break;
+    case 'share':{var shs=byId(sctx.id);closeSheet();shareSong(shs);break;}
+    case 'autobk':bkSheet();break;
+    case 'bkpick':{var Pb=UPDP();if(Pb&&Pb.backupPick)Pb.backupPick().then(function(r){bkUri=r.uri||'';bkRun(true).then(bkSheet);}).catch(function(e){if(!/abgebrochen/.test(spMsg(e)))toast('Nicht möglich: '+spMsg(e));});break;}
+    case 'bknow':bkRun(true).then(bkSheet);break;
+    case 'bkoff':{var Po=UPDP();if(Po&&Po.backupClear)Po.backupClear().then(function(){bkUri='';bkSheet();});break;}
     case 'edsave':editSave();break;
     case 'qjump':{var qj=parseInt(el.dataset.i,10);if(qj!==qi){qi=qj;loadSong(byId(queue[qi]));}closeSheet();break;}
     case 'qup':{var a1=parseInt(el.dataset.i,10);if(a1>qi+1){var t1=queue[a1];queue[a1]=queue[a1-1];queue[a1-1]=t1;}queueSheet();break;}
@@ -3229,6 +3300,7 @@ document.addEventListener('click',function(e){
     case 'pfav':if(cur)toggleFav(cur.id);break;
     case 'pmore':if(cur){sctx={};songSheet(cur.id);}break;
     case 'queue':queueSheet();break;
+    case 'rec':recToggle();break;
     case 'back15':if(audio){audio.currentTime=Math.max(0,audio.currentTime-15);pushNative();}break;
     case 'fwd15':if(audio){audio.currentTime=Math.min((audio.duration||1e9)-1,audio.currentTime+15);pushNative();}break;
     case 'lyrics':lyrOpen=!lyrOpen;$('#pLyr').classList.toggle('pri',lyrOpen);lyrKey='';lyrRender(true);break;
@@ -3506,7 +3578,7 @@ render();
   setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   try{if(!localStorage.getItem('fox-d2')){localStorage.setItem('fox-d2','1');if(state.theme==='auto'){state.theme='dark';saveState();}}}catch(e){}
   applyTheme();applySpeed();if(needFx())silenceInit(audio);
-  if(isNative()){initNative();setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);if(state.alarm&&state.alarm.on)setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
+  if(isNative()){initNative();setTimeout(bkAuto,15000);setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);if(state.alarm&&state.alarm.on)setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
 })();
 })();
 </script>

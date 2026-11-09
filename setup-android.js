@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java', 'RadioRec.java', 'FoxWidgetLarge.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -77,6 +77,10 @@ if (!xml.includes('FoxBrowserService')) {
     '    <receiver android:name="' + pkg + '.FoxWidget" android:exported="false" android:label="Fox Musik">\n' +
     '        <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>\n' +
     '        <meta-data android:name="android.appwidget.provider" android:resource="@xml/fox_widget_info" />\n' +
+    '    </receiver>\n' +
+    '    <receiver android:name="' + pkg + '.FoxWidgetLarge" android:exported="false" android:label="Fox Musik groß">\n' +
+    '        <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>\n' +
+    '        <meta-data android:name="android.appwidget.provider" android:resource="@xml/fox_widget_large_info" />\n' +
     '    </receiver>\n' +
     '    <receiver android:name="' + pkg + '.FoxAlarm" android:exported="false">\n' +
     '        <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>\n' +

@@ -19,20 +19,25 @@ public class FoxWidget extends AppWidgetProvider {
     }
 
     static void update(Context ctx) {
+        updateFor(ctx, FoxWidget.class, "fox_widget", 240);
+        updateFor(ctx, FoxWidgetLarge.class, "fox_widget_large", 480);
+    }
+
+    static void updateFor(Context ctx, Class<?> cls, String layoutName, int coverPx) {
         try {
             AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
-            int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, FoxWidget.class));
+            int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, cls));
             if (ids == null || ids.length == 0) {
                 return;
             }
-            int layout = ctx.getResources().getIdentifier("fox_widget", "layout", ctx.getPackageName());
+            int layout = ctx.getResources().getIdentifier(layoutName, "layout", ctx.getPackageName());
             RemoteViews v = new RemoteViews(ctx.getPackageName(), layout);
             boolean has = PlaybackService.title != null && !PlaybackService.title.isEmpty();
             v.setTextViewText(id(ctx, "w_title"), has ? PlaybackService.title : "Fox Musik");
             v.setTextViewText(id(ctx, "w_artist"), has ? PlaybackService.artist : "Tippen zum Öffnen");
             Bitmap c = PlaybackService.cover;
             if (c != null) {
-                v.setImageViewBitmap(id(ctx, "w_cover"), scale(c));
+                v.setImageViewBitmap(id(ctx, "w_cover"), scale(c, coverPx));
             } else {
                 v.setImageViewResource(id(ctx, "w_cover"), ctx.getResources().getIdentifier("ic_launcher", "mipmap", ctx.getPackageName()));
             }
@@ -53,12 +58,12 @@ public class FoxWidget extends AppWidgetProvider {
         return ctx.getResources().getIdentifier(name, "id", ctx.getPackageName());
     }
 
-    private static Bitmap scale(Bitmap b) {
+    private static Bitmap scale(Bitmap b, int px) {
         int m = Math.max(b.getWidth(), b.getHeight());
-        if (m <= 240) {
+        if (m <= px) {
             return b;
         }
-        float k = 240f / m;
+        float k = (float) px / m;
         return Bitmap.createScaledBitmap(b, Math.round(b.getWidth() * k), Math.round(b.getHeight() * k), true);
     }
 
