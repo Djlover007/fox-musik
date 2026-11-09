@@ -2261,11 +2261,26 @@ async function cvManual(id){
   el.outerHTML='<div class="cvgrid">'+c.slice(0,12).map(function(x,i){return '<button class="cvc" data-sa="cvuse" data-i="'+i+'"><div class="cov" style="background-image:url(\''+esc(x.thumb||x.url)+'\')"></div><b>'+esc(x.album||x.title)+'</b><small>'+esc(x.artist)+' · '+x.src+'</small></button>';}).join('')+'</div>'+
     '<button class="sitem" data-sa="cvfile">'+ic('plus')+'<span>Eigenes Bild wählen</span></button>'+(grp.length>1?'<p class="nw-sub" style="margin:4px 2px 0">Gilt für alle '+grp.length+' Titel dieses Albums.</p>':'');
 }
+async function cvSetBlob(list,blob){
+  for(var k=0;k<list.length;k++){var s=list[k];covDrop(s);s.cover=blob;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
+  closeSheet();render();
+  if(cur&&list.some(function(x){return x.id===cur.id;})){tintKey='';updateNow();pushNative(true);}
+  toast('Cover gespeichert');
+}
 function cvFile(){
-  if(!cvPick)return;var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';
+  if(!cvPick)return;var list=cvPick.list, P=UPDP();
+  // In der App: Androids eigene Bildauswahl (die Dateiauswahl der WebView ist dort unzuverlaessig)
+  if(P&&P.pickImage){
+    P.pickImage().then(function(r){
+      if(!r||!r.data)return;
+      var bin=atob(r.data),u8=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+      return cvSetBlob(list,new Blob([u8],{type:'image/jpeg'}));
+    }).catch(function(e){var m=spMsg(e);if(!/abgebrochen/i.test(m))toast('Bild konnte nicht übernommen werden: '+m);});
+    return;
+  }
+  var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';
   inp.onchange=async function(){var f=inp.files&&inp.files[0];inp.remove();if(!f)return;
-    for(var k=0;k<cvPick.list.length;k++){var s=cvPick.list[k];covDrop(s);s.cover=f;s.coverOnline=1;s.coverAuto=1;if(!s.url)await dbPut('songs',s);}
-    closeSheet();render();if(cur&&cvPick.list.indexOf(cur)>-1){tintKey='';updateNow();pushNative(true);}toast('Cover gespeichert');};
+    try{var blob=new Blob([await f.arrayBuffer()],{type:f.type||'image/jpeg'});await cvSetBlob(list,blob);}catch(e){toast('Bild konnte nicht übernommen werden.');}};
   document.body.appendChild(inp);inp.click();
 }
 /* ---------- Liedtexte (lrclib.net) ---------- */

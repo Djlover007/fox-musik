@@ -1263,4 +1263,52 @@ public class UpdatePlugin extends Plugin {
             call.reject(String.valueOf(e.getMessage()));
         }
     }
+
+    // ---- Eigenes Cover-Bild aus der Galerie waehlen ----
+    @PluginMethod
+    public void pickImage(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        startActivityForResult(call, Intent.createChooser(i, "Bild wählen"), "imagePicked");
+    }
+
+    @ActivityCallback
+    private void imagePicked(final PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        Intent d = result.getData();
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || d == null || d.getData() == null) {
+            call.reject("abgebrochen");
+            return;
+        }
+        final Uri uri = d.getData();
+        final Context ctx = getContext();
+        new Thread(() -> {
+            try {
+                InputStream in = ctx.getContentResolver().openInputStream(uri);
+                android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeStream(in);
+                if (in != null) {
+                    in.close();
+                }
+                if (bm == null) {
+                    call.reject("Bild nicht lesbar");
+                    return;
+                }
+                int max = Math.max(bm.getWidth(), bm.getHeight());
+                if (max > 800) {
+                    float k = 800f / max;
+                    bm = android.graphics.Bitmap.createScaledBitmap(bm, Math.round(bm.getWidth() * k), Math.round(bm.getHeight() * k), true);
+                }
+                java.io.ByteArrayOutputStream jo = new java.io.ByteArrayOutputStream();
+                bm.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, jo);
+                JSObject o = new JSObject();
+                o.put("data", android.util.Base64.encodeToString(jo.toByteArray(), android.util.Base64.NO_WRAP));
+                call.resolve(o);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
 }
