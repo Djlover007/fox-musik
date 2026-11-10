@@ -590,7 +590,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],recs:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -887,6 +887,7 @@ function wireAudio(a){
     }
     if(lyrOpen)lyrTick();
     yrTick(a);
+    recTick();
     posSave(false);
     lastSave(false);
     sleepCheck();
@@ -941,7 +942,9 @@ function fxActive(){var f=state.fx||{};return !!(f.sp||f.ex||(f.prof&&f.prof.on)
 function needFx(){return !!(state.skip||state.level||eqActive()||fxActive()||(state.eq&&state.eq.boost>0));}
 // Neowake-Streams in der App ueber den eigenen Umweg laden, damit Klangeinstellungen wirken
 function nwSrc(s){return (isNative()&&/^https:/.test(s.url||''))?location.origin+'/_nwproxy?u='+encodeURIComponent(s.url):s.url;}
-function isStreamBypass(s){return !!(s&&(s.live||s.pod||(s.url&&!isNative())));}
+function isRec(s){return !!(s&&s.device&&/\/Fox Radio\//i.test(s.path||''));}
+// Radio-Aufnahmen spielen wie das Live-Radio ohne Effekte: genau so, wie sie gesendet wurden.
+function isStreamBypass(s){return !!(s&&(s.live||s.pod||isRec(s)||(s.url&&!isNative())));}
 function fmtDur(s,d){return (s&&s.live)||!isFinite(d)?'LIVE':fmt(d);}
 function eqBuild(){
   if(eqIn)return;
@@ -1136,7 +1139,7 @@ function pushNative(newTrack){
   var P=PB();if(!P)return;
   try{
     if(!cur){P.update({stop:true}).catch(function(){});return;}
-    P.update({title:cur.title,artist:cur.artist||NOARTIST,album:cur.album||'',
+    P.update({title:dispT(cur),artist:dispA(cur)||NOARTIST,album:cur.album||'',
       duration:Math.round((audio.duration||cur.duration||0)*1000),position:Math.round(audio.currentTime*1000),
       playing:!audio.paused,speed:curSpeed(),lock:state.lock,newTrack:!!newTrack}).catch(function(){});
     if(newTrack){
@@ -1210,12 +1213,12 @@ function updateNow(){
   else{
   m.hidden=false;
   $('#miniCov').innerHTML=coverHTML(cur,'mc');
-  $('#miniT').textContent=cur.title;
-  $('#miniA').textContent=cur.artist||NOARTIST;
+  $('#miniT').textContent=dispT(cur);
+  $('#miniA').textContent=dispA(cur)||NOARTIST;
   }
   $('#pCovWrap').innerHTML=coverHTML(cur,'big');
-  $('#pT').textContent=cur.title;
-  $('#pA').textContent=(cur.artist||NOARTIST)+(cur.album?' · '+cur.album:'');
+  $('#pT').textContent=dispT(cur);
+  $('#pA').textContent=cur._rn?dispA(cur):((cur.artist||NOARTIST)+(cur.album?' · '+cur.album:''));
   var u=coverURL(cur), bg=$('#pBg');
   bg.style.backgroundImage=u?'url('+u+')':'linear-gradient(160deg,hsl('+hue(cur.album||cur.title)+' 55% 55%),hsl('+(hue(cur.album||cur.title)+40)+' 58% 35%))';
   $('#tDur').textContent=fmtDur(cur,cur.duration);
@@ -1301,7 +1304,7 @@ function rowsHTML(arr){
   return arr.map(function(s,i){
     var on=s.id===playing;
     return '<div class="row'+(on?' now':'')+'"><button class="rowmain" data-act="play" data-i="'+i+'">'+coverHTML(s,'rc')+
-      '<span class="rt"><b>'+esc(s.title)+'</b><small>'+esc(s.artist||NOARTIST)+(s.album?' · '+esc(s.album):'')+'</small></span>'+
+      '<span class="rt"><b>'+esc(s.title)+'</b><small>'+esc(recSub(s)||((s.artist||NOARTIST)+(s.album?' · '+s.album:'')))+'</small></span>'+
       '<span class="dur">'+(on?'<span class="eq"><i></i><i></i><i></i></span>':(s.duration?fmt(s.duration):''))+'</span></button>'+
       '<button class="ib" data-act="more" data-id="'+s.id+'" aria-label="Mehr zu '+esc(s.title)+'">'+ic('more',1)+'</button></div>';
   }).join('');
@@ -2292,6 +2295,7 @@ function lyrQuery(s){
   if(!s)return null;
   var t=s.title, a=s.artist&&s.artist!==NOARTIST?s.artist:'';
   if(s.live){var nt=String(s.nowTitle||'');var m=nt.match(/^(.+?)\s+[-–—]\s+(.+)$/);if(!m)return null;a=m[1];t=m[2];}
+  if(s._rn){if(!s._rn.a)return null;a=s._rn.a;t=s._rn.t;}
   if(s.albumId||s.pod)return null;
   t=String(t||'').replace(/\((official|lyric|audio|video|hd|remaster)[^)]*\)|\[[^\]]*\]/gi,'').replace(/\s+(feat|ft)\.?\s.*$/i,'').trim();
   a=String(a||'').replace(/\s+(feat|ft)\.?\s.*$/i,'').split(/\s*[,;&]\s*/)[0].trim();
@@ -2934,21 +2938,69 @@ function shareSong(s){
   try{navigator.clipboard.writeText(txt);toast('In die Zwischenablage kopiert');}catch(e){}
 }
 /* ---------- Radio aufnehmen ---------- */
-var recT=null, recOn=false, recUrl='';
+var recT=null, recOn=false, recUrl='', recName='';
 function recUi(){
   var b=$('#pRec');if(!b)return;
   b.hidden=!(cur&&cur.live&&isNative());
   b.classList.toggle('pri',recOn);
 }
+/* Aufnahmen: Titel und Interpret aus dem Sender merken und beim Abspielen anzeigen */
+function recSplit(x){x=String(x||'').trim();var m=x.match(/^(.+?)\s+[-–—]\s+(.+)$/);return m?{a:m[1].trim(),t:m[2].trim()}:{a:'',t:x};}
+function recFile(s){return String((s&&s.path)||'').split('/').pop();}
+function recInfo(s){return isRec(s)?(state.recs||{})[recFile(s)]||null:null;}
+function recSub(s){var i=recInfo(s);if(!i)return '';var n=(i.tracks||[]).length;return 'Aufnahme · '+(i.st||'Radio')+(n>1?' · '+n+' Titel':'');}
+function dispT(s){return s&&s._rn?s._rn.t:(s?s.title:'');}
+function dispA(s){return s&&s._rn?((s._rn.a?s._rn.a+' · ':'')+(s._rn.st||'Aufnahme')):(s?s.artist:'');}
+function recTick(){
+  if(!cur)return;var i=recInfo(cur);
+  if(!i||!i.tracks||!i.tracks.length){if(cur._rn){delete cur._rn;updateNow();}return;}
+  var d=isFinite(audio.duration)&&audio.duration>0?audio.duration:(i.sec||0);if(!d)return;
+  var by=audio.currentTime/d*(i.bytes||0), k=0;
+  for(var x=0;x<i.tracks.length;x++){if(i.tracks[x].b<=by+1)k=x;}
+  if(cur._rk===k&&cur._rn)return;
+  var sp=recSplit(i.tracks[k].t);cur._rk=k;cur._rn={t:sp.t||cur.title,a:sp.a,st:i.st};
+  lyrKey='';updateNow();pushNative();
+}
+function recTracksSheet(id){
+  var s=byId(id), i=recInfo(s);if(!i)return;
+  var d=(cur&&cur.id===id&&isFinite(audio.duration)&&audio.duration>0)?audio.duration:(i.sec||s.duration||0);
+  var h='<div class="shead"><div class="rt"><b>Titel dieser Aufnahme</b><small>'+esc(i.st||'Radio')+' · '+new Date(i.at).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+'</small></div></div>';
+  h+=(i.tracks||[]).map(function(t,k){var sp=recSplit(t.t), at=i.bytes?t.b/i.bytes*d:0;return '<button class="sitem" data-sa="recjump" data-id="'+esc(id)+'" data-t="'+at.toFixed(1)+'"><span><b>'+esc(sp.t)+'</b>'+(sp.a?'<small style="display:block;color:var(--muted)">'+esc(sp.a)+'</small>':'')+'</span><small>'+fmt(at)+'</small></button>';}).join('')||'<p class="none">Der Sender hat keine Titel mitgeschickt.</p>';
+  openSheet(h);
+}
+function recJunk(t,st){t=String(t||'').trim();return !t||t.length<3||t.toLowerCase()===String(st||'').toLowerCase();}
+async function recFinish(st,station){
+  recOn=false;clearInterval(recT);recUi();var lb=$('#pRec span');if(lb)lb.textContent='Aufnehmen';
+  if(!st||!st.file||st.bytes<20000){if(st&&st.error)toast('Aufnahme beendet: '+st.error);return;}
+  var tr=[];(st.tracks||[]).forEach(function(x){if(recJunk(x.t,station))return;if(tr.length&&tr[tr.length-1].t===x.t)return;tr.push({b:x.b,t:x.t});});
+  if(tr.length)tr[0].b=0;
+  state.recs[st.file]={st:station,bytes:st.bytes,sec:st.seconds,at:Date.now(),tracks:tr};saveState();
+  toast('Aufnahme gespeichert in Musik → Fox Radio'+(tr.length?' · '+tr.length+(tr.length===1?' Titel erkannt':' Titel erkannt'):''));
+  await new Promise(function(r){setTimeout(r,2500);});
+  try{await scanDevice(false);}catch(e){}
+  var s=songs.filter(function(x){return isRec(x)&&recFile(x)===st.file;})[0];
+  if(s){
+    if(tr.length===1){var sp=recSplit(tr[0].t);s.title=sp.t||s.title;s.artist=sp.a||station;}
+    else if(!s.artist||s.artist===NOARTIST||/unknown/i.test(s.artist))s.artist=station;
+    s.album='Radio-Aufnahmen';
+    try{await dbPut('songs',s);}catch(e){}
+    render();
+  }
+}
 async function recToggle(){
-  var P=UPDP();if(!P||!P.recStart||!cur||!cur.live)return;
-  if(recOn){await P.recStop();recOn=false;clearInterval(recT);recUi();var lb=$('#pRec span');if(lb)lb.textContent='Aufnehmen';toast('Aufnahme gespeichert in Musik → Fox Radio');setTimeout(function(){scanDevice(false);},2500);return;}
+  var P=UPDP();if(!P||!P.recStart)return;
+  if(recOn){
+    var name=recName;await P.recStop();
+    var st=null;for(var i=0;i<12;i++){await new Promise(function(r){setTimeout(r,300);});try{st=await P.recState();}catch(e){}if(st&&!st.running)break;}
+    recFinish(st,name);return;
+  }
+  if(!cur||!cur.live)return;
   var r=await P.recStart({url:cur.url,name:cur.title});
   if(!r||!r.ok){toast('Es läuft schon eine Aufnahme.');return;}
-  recOn=true;recUrl=cur.url;recUi();toast('Aufnahme läuft');
+  recOn=true;recUrl=cur.url;recName=cur.title;recUi();toast('Aufnahme läuft');
   clearInterval(recT);recT=setInterval(async function(){
     try{var st=await P.recState();var lb=$('#pRec span');
-      if(!st.running){clearInterval(recT);recOn=false;recUi();if(lb)lb.textContent='Aufnehmen';if(st.error)toast('Aufnahme beendet: '+st.error);return;}
+      if(!st.running){if(recOn)recFinish(st,recName);return;}
       if(lb)lb.textContent='Stopp · '+fmt(st.seconds)+' · '+(st.bytes/1048576).toFixed(1).replace('.',',')+' MB';
     }catch(e){}
   },1000);
@@ -3041,6 +3093,7 @@ function songSheet(id){
   h+=sItem('share','share','Teilen');
   if(!s.live&&!s.url)h+=sItem('edit','edit','Infos bearbeiten');
   if(!s.live)h+=sItem('cvsearch','search',s.cover?'Anderes Cover suchen':'Cover suchen');
+  if(recInfo(s)&&(recInfo(s).tracks||[]).length)h+=sItem('rectracks','list','Titel dieser Aufnahme ('+recInfo(s).tracks.length+')');
   if(!s.live)h+=sItem('tags','tag','Stimmungen & Tags'+((state.tags[id]||[]).length?' ('+state.tags[id].join(', ')+')':''));
   if(!s.live&&!s.url)h+=sItem('mix','shuffle','Mix aus diesem Titel');
   h+=sItem('next','list','Als Nächstes abspielen');
@@ -3687,7 +3740,7 @@ function backupText(){
   Object.keys(state.stats||{}).forEach(note);
   var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
     radioFav:state.radioFav||[],
-    alarms:alList(),fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
+    alarms:alList(),recs:state.recs,fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
     settings:{eq:state.eq,speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
   return JSON.stringify(data);
 }
@@ -3754,6 +3807,7 @@ async function applyBackup(text){
   (d.pods||[]).forEach(function(p){if(p&&p.feed&&!state.pods.some(function(x){return x.feed===p.feed;}))state.pods.push(p);});
   if(d.yr&&!Object.keys(state.yr||{}).length)state.yr=d.yr;
   if(d.eqDev)Object.keys(d.eqDev).forEach(function(k){if(!state.eqDev[k])state.eqDev[k]=d.eqDev[k];});
+  if(d.recs)Object.keys(d.recs).forEach(function(k){if(!state.recs[k])state.recs[k]=d.recs[k];});
   if(d.tags)Object.keys(d.tags).forEach(function(k){if(!state.tags[k])state.tags[k]=d.tags[k];});
   (d.hideDirs||[]).forEach(function(x){if(state.hideDirs.indexOf(x)<0)state.hideDirs.push(x);});
   if(d.podAuto)Object.keys(d.podAuto).forEach(function(k){state.podAuto[k]=d.podAuto[k];});
@@ -3950,6 +4004,8 @@ function handleSheet(act,el){
     case 'tagt':{var tl=state.tags[sctx.id]||(state.tags[sctx.id]=[]), tt=el.dataset.t, ti=tl.indexOf(tt);if(ti<0)tl.push(tt);else tl.splice(ti,1);if(!tl.length)delete state.tags[sctx.id];saveState();tagSheet(sctx.id);renderMain();break;}
     case 'tagnew':{var inp=$('#tagin'), nt=((inp&&inp.value)||'').trim().slice(0,30);if(!nt)break;var tl2=state.tags[sctx.id]||(state.tags[sctx.id]=[]);if(tl2.indexOf(nt)<0)tl2.push(nt);saveState();tagSheet(sctx.id);renderMain();break;}
     case 'dups':dupSheet();break;
+    case 'rectracks':recTracksSheet(sctx.id);break;
+    case 'recjump':{var rid=el.dataset.id, rt=parseFloat(el.dataset.t)||0, rs=byId(rid);closeSheet();if(!rs)break;if(!cur||cur.id!==rid){startQueue([rid],0);var ra=audio, rf=function(){ra.removeEventListener('loadedmetadata',rf);try{ra.currentTime=rt;}catch(e){}};ra.addEventListener('loadedmetadata',rf);}else{try{audio.currentTime=rt;}catch(e){}if(audio.paused){var rp=audio.play();if(rp&&rp.catch)rp.catch(function(){});}}break;}
     case 'fx':fxSheet();break;
     case 'fxsp':state.fx.sp=parseInt(el.dataset.v,10)||0;fxChanged();fxSheet();break;
     case 'fxex':state.fx.ex=parseInt(el.dataset.v,10)||0;fxChanged();fxSheet();break;
@@ -4396,7 +4452,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;

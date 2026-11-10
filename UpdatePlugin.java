@@ -857,6 +857,16 @@ public class UpdatePlugin extends Plugin {
         o.put("seconds", RadioRec.started > 0 ? (System.currentTimeMillis() - RadioRec.started) / 1000 : 0);
         o.put("file", RadioRec.file);
         o.put("error", RadioRec.error);
+        com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
+        synchronized (RadioRec.tracks) {
+            for (String[] t : RadioRec.tracks) {
+                JSObject x = new JSObject();
+                x.put("b", Long.parseLong(t[0]));
+                x.put("t", t[1]);
+                arr.put(x);
+            }
+        }
+        o.put("tracks", arr);
         call.resolve(o);
     }
 
