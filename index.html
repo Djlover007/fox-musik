@@ -769,7 +769,7 @@ function loadSong(s,fx){
   }
   audio._counted=false;
   if(recOn&&s.url!==recUrl){var Pr=UPDP();if(Pr&&Pr.recStop)Pr.recStop();}
-  if(restoring)audio.preload=s.live?'none':(s.url?'metadata':'auto');
+  if(restoring){audio.preload=s.live?'none':(s.url?'metadata':'auto');audio._cold=true;}else audio._cold=false;
   if(s.live){s.nowTitle='';s.artist=rdSub(s.radio||{});audio.src=s.url;audio._proxied=false;if(!restoring)rdClick(s.radio||{});rdNowStart();}
   else if(!usePre)setSrc(audio,s);
   applySpeed();
@@ -834,7 +834,11 @@ function prev(){
 }
 function togglePlay(){
   if(!cur)return;
-  if(audio.paused){var p=audio.play();if(p&&p.catch)p.catch(function(){});}else audio.pause();
+  if(!audio.paused){audio.pause();return;}
+  // Radio: nach dem Öffnen der App oder nach längerer Pause immer frisch verbinden, sonst bleibt es stumm oder spielt Altes
+  if(cur.live&&(audio._cold||audio.error||(audio._pausedAt&&Date.now()-audio._pausedAt>20000))){loadSong(cur);return;}
+  var a=audio, p=audio.play();
+  if(p&&p.catch)p.catch(function(){if(a===audio&&cur&&cur.live)loadSong(cur);});
 }
 function toggleShuffle(){
   state.shuffle=!state.shuffle;
@@ -906,7 +910,7 @@ function wireAudio(a){
     pushNative();
   });
   a.addEventListener('play',function(){if(a===audio){srcFoxStarted();updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
-  a.addEventListener('pause',function(){a._lt=0;if(a===audio){lastSave(true);updateTransport();pushNative();posSave(true);}});
+  a.addEventListener('pause',function(){a._lt=0;a._pausedAt=Date.now();if(a===audio){lastSave(true);updateTransport();pushNative();posSave(true);}});
   a.addEventListener('ended',function(){if(a!==audio)return;if(cur&&cur.live){nwNote('Radio-Stream beendet, verbinde neu');setTimeout(function(){if(a===audio&&cur&&cur.live){a.src=cur.url;var p=a.play();if(p&&p.catch)p.catch(function(){});}},1500);return;}next(true);});
   a.addEventListener('error',function(){if(a===audio&&cur&&cur.url){nwNote('Audio-Fehler Code '+(a.error&&a.error.code)+' '+String(a.currentSrc||'').split('?')[0]);
     if(a._proxied){nwNote('Umweg fehlgeschlagen, spiele direkt (ohne Equalizer)');var o=audio;audio=newAudio(true);dropAudio(o);audio.src=cur.url;applySpeed();var pp=audio.play();if(pp&&pp.catch)pp.catch(function(){});a._handled=true;}}});
@@ -2171,14 +2175,17 @@ function rdNowTick(){
     var fin=String((r&&r.final)||''), t='';
     if(/streamabc\.net\//i.test(fin)||/streamabc\.net\//i.test(cur.url))t=await rdAbcNow(/streamabc\.net\//i.test(fin)?fin:cur.url);
     if(s!==cur)return;
-    t=t||String((r&&r.title)||'').trim();
-    if(!t&&orbSlug(s)&&Date.now()-orbNowT>60000){orbNowT=Date.now();try{var ol=await orbLoad(orbSlug(s),0);if(ol[0]&&ol[0].now)t=ol[0].t;}catch(e){}if(s!==cur)return;}
+    if(!t){t=String((r&&r.title)||'').trim();if(rdJunk(t,s.title))t='';}
+    if(!t&&orbSlug(s)){
+      if(Date.now()-orbNowT>40000){orbNowT=Date.now();try{var ol=await orbLoad(orbSlug(s),0);orbNowTitle=(ol[0]&&ol[0].now&&!rdJunk(ol[0].t,s.title))?ol[0].t:'';}catch(e){}if(s!==cur)return;}
+      t=orbNowTitle;
+    }
     rdSetNow(t);
   }).catch(function(){});
 }
 /* Playlist des Senders von onlineradiobox.com (heute und die letzten 6 Tage) */
 var ORB_KNOWN=[[/klassik\s*radio.*healing/i,'de/klassikhealing']];
-var orbCache={}, orbDay=0, orbNowT=0;
+var orbCache={}, orbDay=0, orbNowT=0, orbNowTitle='';
 function orbSlug(s){
   var k=rdHistKey(s);if(state.rdOrb[k]==='-')return '';if(state.rdOrb[k])return state.rdOrb[k];
   for(var i=0;i<ORB_KNOWN.length;i++)if(ORB_KNOWN[i][0].test(s.title||''))return ORB_KNOWN[i][1];
@@ -2207,7 +2214,7 @@ function orbParse(html,day){
 }
 async function orbLoad(slug,day){
   var k=slug+'#'+day, c=orbCache[k];
-  if(c&&Date.now()-c.at<(day?3600e3:90e3))return c.list;
+  if(c&&Date.now()-c.at<(day?3600e3:35e3))return c.list;
   var P=UPDP();if(!P||!P.neowakeFetch)throw new Error('Nur in der App verfügbar');
   var r=await P.neowakeFetch({url:'https://onlineradiobox.com/'+slug+'/playlist/'+(day?day:''),cookies:false});
   if(!r||r.status>=400||!r.text)throw new Error('Seite nicht erreichbar');
@@ -2247,7 +2254,7 @@ function rdOwnHist(st){
   });
   return h+'<button class="sitem" data-sa="rdhclear"><span>Eigenen Verlauf dieses Senders leeren</span></button>';
 }
-function rdNowStart(){clearInterval(rdNowT);rdNowT=setInterval(rdNowTick,6000);setTimeout(rdNowTick,2500);}
+function rdNowStart(){orbNowT=0;orbNowTitle='';clearInterval(rdNowT);rdNowT=setInterval(rdNowTick,6000);setTimeout(rdNowTick,2500);}
 function rdClick(st){try{rbFetch('/json/url/'+encodeURIComponent(st.uuid)).catch(function(){});}catch(e){}}
 function radioHomeHTML(){
   if(!state.radioFav.length)return '';
@@ -3091,6 +3098,7 @@ function recTracksSheet(id){
   h+=(i.tracks||[]).map(function(t,k){var sp=recSplit(t.t), at=i.bytes?t.b/i.bytes*d:0;return '<button class="sitem" data-sa="recjump" data-id="'+esc(id)+'" data-t="'+at.toFixed(1)+'"><span><b>'+esc(sp.t)+'</b>'+(sp.a?'<small style="display:block;color:var(--muted)">'+esc(sp.a)+'</small>':'')+'</span><small>'+fmt(at)+'</small></button>';}).join('')||'<p class="none">Der Sender hat keine Titel mitgeschickt.</p>';
   openSheet(h);
 }
+function rdJunk(t,st){t=String(t||'').trim();if(t.length<3)return true;var a=nt(t), b=nt(st);if(!a)return true;return !!b&&(a===b||b.indexOf(a)>-1||(a.indexOf(b)>-1&&a.length<b.length+12));}
 function recJunk(t,st){t=String(t||'').trim();return !t||t.length<3||t.toLowerCase()===String(st||'').toLowerCase();}
 async function recFinish(st,station){
   recOn=false;clearInterval(recT);recUi();var lb=$('#pRec span');if(lb)lb.textContent='Aufnehmen';

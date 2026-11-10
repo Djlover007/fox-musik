@@ -55,7 +55,7 @@ public class RadioProxy {
                             break;
                         }
                         read += n;
-                        if (((IcyStream) in).seenMeta) {
+                        if (((IcyStream) in).titleSeen) {
                             break;
                         }
                     }
@@ -212,6 +212,7 @@ public class RadioProxy {
         private final String key;
         private int until;
         volatile boolean seenMeta;
+        volatile boolean titleSeen = false;
 
         IcyStream(InputStream in, int metaint, String key) {
             super(in);
@@ -249,7 +250,10 @@ public class RadioProxy {
                 if (a >= 0) {
                     int b = s.indexOf("';", a + 13);
                     String t = (b > a ? s.substring(a + 13, b) : s.substring(a + 13)).trim();
-                    NOW.put(key, t);
+                    if (t.length() > 0) {
+                        NOW.put(key, t);
+                        titleSeen = true;
+                    }
                 }
             }
             until = metaint;
