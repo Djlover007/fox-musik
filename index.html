@@ -952,7 +952,7 @@ function isStreamBypass(s){return !!(s&&(s.live||s.pod||isRec(s)||(s.url&&!isNat
 function fmtDur(s,d){return (s&&s.live)||!isFinite(d)?'LIVE':fmt(d);}
 function eqBuild(){
   if(eqIn)return;
-  actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  if(!actx){var AC=window.AudioContext||window.webkitAudioContext;try{actx=new AC({latencyHint:'playback'});}catch(e){actx=new AC();}}
   eqIn=actx.createGain();eqPre=actx.createGain();
   var prev=eqIn;
   EQ_F.forEach(function(f,i){
@@ -965,7 +965,7 @@ function eqBuild(){
   eqLim.threshold.value=-1.5;eqLim.knee.value=0;eqLim.ratio.value=20;eqLim.attack.value=0.002;eqLim.release.value=0.15;
   eqOut=actx.createGain();eqOut.gain.value=Math.pow(10,-0.9/20);eqOut.connect(actx.destination);eqLim.connect(eqOut);
   eqLev=actx.createDynamicsCompressor();eqLevG=actx.createGain();
-  prev.connect(eqPre);fxBuild();eqPre.connect(fxIn);fxOut.connect(eqLev);eqLev.connect(eqLevG);eqLevG.connect(eqBoost);eqRoute(false);
+  prev.connect(eqPre);fxBuild();eqPre.connect(fxIn);eqLev.connect(eqLevG);eqLevG.connect(eqBoost);eqLevRoute(false);eqRoute(false);
   eqApply();
 }
 /* ---------- Klang-Effekte: Hörprofil, Höhen auffrischen, Raumklang ---------- */
@@ -978,43 +978,57 @@ function fxBuild(){
   fxIn.channelCount=2;fxIn.channelCountMode='explicit';fxIn.channelInterpretation='speakers';
   // Hörprofil: getrennte Filter fuer linkes und rechtes Ohr
   var sp=actx.createChannelSplitter(2), mg=actx.createChannelMerger(2);
-  fxIn.connect(sp);
   [0,1].forEach(function(ch){
     var prev=null, first=null, side=ch?'R':'L';
     PROF_F.forEach(function(f,i){var n=actx.createBiquadFilter();n.type=i===PROF_F.length-1?'highshelf':'peaking';n.frequency.value=f;n.Q.value=1.1;n.gain.value=0;if(prev)prev.connect(n);else first=n;prev=n;fxProf[side].push(n);});
     sp.connect(first,ch);prev.connect(mg,0,ch);
   });
   // Höhen auffrischen: erzeugt fehlende Obertoene, wie sie bei MP3 oft abgeschnitten sind
-  var sum=actx.createGain();fxDry=sum;mg.connect(sum);
+  var pre=actx.createGain();mg.connect(pre);
+  var sum=actx.createGain();fxDry=sum;pre.connect(sum);
   var hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=3200;hp.Q.value=0.7;
-  var ws=actx.createWaveShaper(), cv=new Float32Array(2048);for(var i=0;i<cv.length;i++){var x=i/(cv.length-1)*2-1;cv[i]=Math.tanh(3.2*x)/Math.tanh(3.2);}ws.curve=cv;ws.oversample='4x';
+  var ws=actx.createWaveShaper(), cv=new Float32Array(2048);for(var i=0;i<cv.length;i++){var x=i/(cv.length-1)*2-1;cv[i]=Math.tanh(3.2*x)/Math.tanh(3.2);}ws.curve=cv;ws.oversample='2x';
   var hp2=actx.createBiquadFilter();hp2.type='highpass';hp2.frequency.value=8500;hp2.Q.value=0.7;
   var hp3=actx.createBiquadFilter();hp3.type='highpass';hp3.frequency.value=8500;hp3.Q.value=0.7;
   fxExG=actx.createGain();fxExG.gain.value=0;
-  mg.connect(hp);hp.connect(ws);ws.connect(hp2);hp2.connect(hp3);hp3.connect(fxExG);fxExG.connect(sum);
+  hp.connect(ws);ws.connect(hp2);hp2.connect(hp3);hp3.connect(fxExG);fxExG.connect(sum);
   // Raumklang: Das Original bleibt unveraendert laut. Dazu kommt nur der Seitenanteil oberhalb von 250 Hz,
   // damit Bass und Gesang in der Mitte ihre Kraft behalten.
   fxComp=actx.createGain();sum.connect(fxComp);fxComp.connect(fxOut);
   var s2=actx.createChannelSplitter(2), m2=actx.createChannelMerger(2);
-  sum.connect(s2);
   var sd=actx.createGain(), neg=actx.createGain(), shp=actx.createBiquadFilter(), inv=actx.createGain();
   neg.gain.value=-1;inv.gain.value=-1;shp.type='highpass';shp.frequency.value=250;shp.Q.value=0.7;
   s2.connect(sd,0);s2.connect(neg,1);neg.connect(sd);
   fxW.side=actx.createGain();fxW.side.gain.value=0;
   sd.connect(shp);shp.connect(fxW.side);fxW.side.connect(m2,0,0);fxW.side.connect(inv);inv.connect(m2,0,1);
   m2.connect(fxComp);
-  var cvn=actx.createConvolver(), len=Math.floor(actx.sampleRate*0.9), ir=actx.createBuffer(2,len,actx.sampleRate);
-  for(var c=0;c<2;c++){var d=ir.getChannelData(c);for(var k=0;k<len;k++){var t=k/actx.sampleRate;d[k]=(Math.random()*2-1)*Math.exp(-t*5.5)*(t<0.012?0:1);}}
+  var cvn=actx.createConvolver(), len=Math.floor(actx.sampleRate*0.35), ir=actx.createBuffer(2,len,actx.sampleRate);
+  for(var c=0;c<2;c++){var d=ir.getChannelData(c);for(var k=0;k<len;k++){var t=k/actx.sampleRate;d[k]=(Math.random()*2-1)*Math.exp(-t*9)*(t<0.012?0:1);}}
   cvn.buffer=ir;
   var lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6000;
   var rhp=actx.createBiquadFilter();rhp.type='highpass';rhp.frequency.value=200;
   fxRoomG=actx.createGain();fxRoomG.gain.value=0;
-  sum.connect(rhp);rhp.connect(cvn);cvn.connect(lp);lp.connect(fxRoomG);fxRoomG.connect(fxOut);
+  rhp.connect(cvn);cvn.connect(lp);lp.connect(fxRoomG);fxRoomG.connect(fxOut);
+  fxN={sp:sp,pre:pre,hp:hp,sum:sum,s2:s2,rhp:rhp};fxR={};
   fxApply();
+}
+// Nur eingeschaltete Effekte werden angeschlossen. Was aus ist, kostet keine Rechenzeit (sonst stottert der Ton auf dem Handy).
+var fxN=null, fxR={}, eqLevOn=null;
+function fxRoute(){
+  var f=state.fx||{}, pr=!!(f.prof&&f.prof.on), ex=!!f.ex, spc=!!f.sp, n=fxN;if(!n)return;
+  if(fxR.pr!==pr){fxR.pr=pr;try{fxIn.disconnect();}catch(e){}fxIn.connect(pr?n.sp:n.pre);}
+  if(fxR.ex!==ex){fxR.ex=ex;if(ex)n.pre.connect(n.hp);else{try{n.pre.disconnect(n.hp);}catch(e){}}}
+  if(fxR.sp!==spc){fxR.sp=spc;if(spc){n.sum.connect(n.s2);n.sum.connect(n.rhp);}else{try{n.sum.disconnect(n.s2);}catch(e){}try{n.sum.disconnect(n.rhp);}catch(e){}}}
+}
+function eqLevRoute(need){
+  if(!fxOut||eqLevOn===need)return;eqLevOn=need;
+  try{fxOut.disconnect();}catch(e){}
+  fxOut.connect(need?eqLev:eqLevG);
 }
 function fxSet(node,v){try{node.setTargetAtTime(v,actx.currentTime,0.05);}catch(e){node.value=v;}}
 function fxApply(){
   if(!fxIn)return;
+  fxRoute();
   var f=state.fx||{}, pr=f.prof&&f.prof.on?f.prof:null, pmax=0;
   ['L','R'].forEach(function(s){fxProf[s].forEach(function(n,i){var v=pr?Math.min(6,(pr[s]||[])[i]||0):0;if(v>pmax)pmax=v;fxSet(n.gain,v);});});
   fxSet(fxExG.gain,[0,0.15,0.3][f.ex||0]);
@@ -1102,6 +1116,7 @@ function eqApply(){
   }
   var bst=(state.eq&&state.eq.boost)||0;
   fxApply();
+  eqLevRoute(!!state.level);
   eqRoute(bst>0||(on&&mx>0)||!!state.level||fxActive());
   var bg=Math.pow(10,bst/20);
   try{eqBoost.gain.setTargetAtTime(bg,actx.currentTime,0.05);}catch(e){eqBoost.gain.value=bg;}
