@@ -958,8 +958,8 @@ function eqBuild(){
     prev.connect(n);prev=n;eqNodes.push(n);
   });
   eqBoost=actx.createGain();eqLim=actx.createDynamicsCompressor();
-  eqLim.threshold.value=-2;eqLim.knee.value=0;eqLim.ratio.value=20;eqLim.attack.value=0.002;eqLim.release.value=0.15;
-  eqOut=actx.createGain();eqOut.gain.value=Math.pow(10,-1.2/20);eqOut.connect(actx.destination);eqLim.connect(eqOut);
+  eqLim.threshold.value=-1.5;eqLim.knee.value=0;eqLim.ratio.value=20;eqLim.attack.value=0.002;eqLim.release.value=0.15;
+  eqOut=actx.createGain();eqOut.gain.value=Math.pow(10,-0.9/20);eqOut.connect(actx.destination);eqLim.connect(eqOut);
   eqLev=actx.createDynamicsCompressor();eqLevG=actx.createGain();
   prev.connect(eqPre);fxBuild();eqPre.connect(fxIn);fxOut.connect(eqLev);eqLev.connect(eqLevG);eqLevG.connect(eqBoost);eqRoute(false);
   eqApply();
@@ -970,6 +970,8 @@ var fxIn=null, fxOut=null, fxProf={L:[],R:[]}, fxExG=null, fxDry=null, fxW={}, f
 function fxBuild(){
   if(fxIn)return;
   fxIn=actx.createGain();fxOut=actx.createGain();
+  // Mono-Dateien auf beide Ohren legen (sonst kaeme nach dem Aufteilen nur links etwas an)
+  fxIn.channelCount=2;fxIn.channelCountMode='explicit';fxIn.channelInterpretation='speakers';
   // Hörprofil: getrennte Filter fuer linkes und rechtes Ohr
   var sp=actx.createChannelSplitter(2), mg=actx.createChannelMerger(2);
   fxIn.connect(sp);
@@ -986,13 +988,17 @@ function fxBuild(){
   var hp3=actx.createBiquadFilter();hp3.type='highpass';hp3.frequency.value=8500;hp3.Q.value=0.7;
   fxExG=actx.createGain();fxExG.gain.value=0;
   mg.connect(hp);hp.connect(ws);ws.connect(hp2);hp2.connect(hp3);hp3.connect(fxExG);fxExG.connect(sum);
-  // Raumklang: Stereo-Verbreiterung plus kurzer, dezenter Raum
+  // Raumklang: Das Original bleibt unveraendert laut. Dazu kommt nur der Seitenanteil oberhalb von 250 Hz,
+  // damit Bass und Gesang in der Mitte ihre Kraft behalten.
+  fxComp=actx.createGain();sum.connect(fxComp);fxComp.connect(fxOut);
   var s2=actx.createChannelSplitter(2), m2=actx.createChannelMerger(2);
   sum.connect(s2);
-  fxW.LL=actx.createGain();fxW.LR=actx.createGain();fxW.RR=actx.createGain();fxW.RL=actx.createGain();
-  s2.connect(fxW.LL,0);s2.connect(fxW.LR,0);s2.connect(fxW.RR,1);s2.connect(fxW.RL,1);
-  fxW.LL.connect(m2,0,0);fxW.RL.connect(m2,0,0);fxW.RR.connect(m2,0,1);fxW.LR.connect(m2,0,1);
-  fxComp=actx.createGain();m2.connect(fxComp);fxComp.connect(fxOut);
+  var sd=actx.createGain(), neg=actx.createGain(), shp=actx.createBiquadFilter(), inv=actx.createGain();
+  neg.gain.value=-1;inv.gain.value=-1;shp.type='highpass';shp.frequency.value=250;shp.Q.value=0.7;
+  s2.connect(sd,0);s2.connect(neg,1);neg.connect(sd);
+  fxW.side=actx.createGain();fxW.side.gain.value=0;
+  sd.connect(shp);shp.connect(fxW.side);fxW.side.connect(m2,0,0);fxW.side.connect(inv);inv.connect(m2,0,1);
+  m2.connect(fxComp);
   var cvn=actx.createConvolver(), len=Math.floor(actx.sampleRate*0.9), ir=actx.createBuffer(2,len,actx.sampleRate);
   for(var c=0;c<2;c++){var d=ir.getChannelData(c);for(var k=0;k<len;k++){var t=k/actx.sampleRate;d[k]=(Math.random()*2-1)*Math.exp(-t*5.5)*(t<0.012?0:1);}}
   cvn.buffer=ir;
@@ -1005,14 +1011,13 @@ function fxBuild(){
 function fxSet(node,v){try{node.setTargetAtTime(v,actx.currentTime,0.05);}catch(e){node.value=v;}}
 function fxApply(){
   if(!fxIn)return;
-  var f=state.fx||{}, pr=f.prof&&f.prof.on?f.prof:null;
-  ['L','R'].forEach(function(s){fxProf[s].forEach(function(n,i){fxSet(n.gain,pr?((pr[s]||[])[i]||0):0);});});
-  fxSet(fxExG.gain,[0,0.35,0.7][f.ex||0]);
-  var w=[1,1.45,1.85][f.sp||0], a=(1+w)/2, b=(1-w)/2;
-  fxSet(fxW.LL.gain,a);fxSet(fxW.RR.gain,a);fxSet(fxW.LR.gain,b);fxSet(fxW.RL.gain,b);
-  fxSet(fxRoomG.gain,[0,0.05,0.1][f.sp||0]);
-  var pmax=0;if(pr)['L','R'].forEach(function(s){(pr[s]||[]).forEach(function(v){if(v>pmax)pmax=v;});});
-  fxSet(fxComp.gain,Math.pow(10,-((f.sp?[0,1.5,3][f.sp]:0)+pmax*0.5)/20));
+  var f=state.fx||{}, pr=f.prof&&f.prof.on?f.prof:null, pmax=0;
+  ['L','R'].forEach(function(s){fxProf[s].forEach(function(n,i){var v=pr?Math.min(6,(pr[s]||[])[i]||0):0;if(v>pmax)pmax=v;fxSet(n.gain,v);});});
+  fxSet(fxExG.gain,[0,0.15,0.3][f.ex||0]);
+  fxSet(fxW.side.gain,[0,0.3,0.6][f.sp||0]);
+  fxSet(fxRoomG.gain,[0,0.04,0.08][f.sp||0]);
+  // nur so viel absenken, wie die Effekte dazugeben, damit es nicht uebersteuert
+  fxSet(fxComp.gain,Math.pow(10,-([0,1,2][f.sp||0]+[0,0.3,0.6][f.ex||0]+pmax*0.25)/20));
 }
 function fxSheet(){
   var f=state.fx||{}, pr=f.prof;
@@ -1022,6 +1027,7 @@ function fxSheet(){
   h+='<div class="srow line"><div><b>Hörprofil</b><small>'+(pr?'Angepasst an dein Gehör · getestet am '+new Date(pr.at).toLocaleDateString('de-DE'):'Ein kurzer Hörtest passt den Klang an deine Ohren an')+'</small></div>'+(pr?'<input type="checkbox" class="sw" data-set="fxprof"'+(pr.on?' checked':'')+' aria-label="Hörprofil an">':'')+'</div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="htest"><b>'+(pr?'Hörtest wiederholen':'Hörtest starten')+'</b><small>Etwa 2 Minuten · Kopfhörer aufsetzen, ruhiger Raum</small></button></div>';
   if(isNative())h+='<div class="srow"><button class="sleepbtn" data-sa="samsungfx"><b>Klangeinstellungen des Handys</b><small>Dolby Atmos, Adapt Sound und UHQ-Upscaler stellst du bei Samsung dort ein</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="fxreset"><b>Klang zurücksetzen</b><small>Schaltet Effekte, Equalizer, Boost und Angleichen aus. Dann klingt alles wie im Original</small></button></div>';
   h+='<p class="nw-sub" style="margin:10px 2px 0">Wirkt auf deine Musik, Neowake-Titel und Podcast-Downloads, nicht auf Radio. Die Effekte merkt sich die App auch pro Kopfhörer.</p>';
   openSheet(h);
 }
@@ -1063,12 +1069,12 @@ function htFinish(){
   HT.on=false;
   var loss={L:[],R:[]}, all=[];
   ['L','R'].forEach(function(s){HT.res[s].forEach(function(db,i){var v=db-HT_REF[i];loss[s][i]=v;all.push(v);});});
-  var base=all.slice().sort(function(a,b){return a-b;})[Math.floor(all.length*0.25)];
+  var base=all.slice().sort(function(a,b){return a-b;})[Math.floor(all.length*0.5)];
   var prof={on:true,at:Date.now(),L:[],R:[],raw:HT.res};
-  ['L','R'].forEach(function(s){prof[s]=loss[s].map(function(v){return Math.max(0,Math.min(8,Math.round((v-base)*0.5)));});});
+  ['L','R'].forEach(function(s){prof[s]=loss[s].map(function(v){return Math.max(0,Math.min(6,Math.round((v-base)*0.5)));});});
   state.fx=state.fx||{};state.fx.prof=prof;fxChanged();
   var sh='<div class="shead"><div class="rt"><b>Dein Hörprofil</b><small>Fertig, das Profil ist jetzt an</small></div></div><div class="htres">'+
-    ['L','R'].map(function(s){return '<div><b>'+(s==='L'?'Links':'Rechts')+'</b>'+PROF_F.map(function(f,i){var v=prof[s][i];return '<div class="htb"><span>'+(f>=1000?f/1000+'k':f)+'</span><i style="--w:'+(v/8*100)+'%"></i><em>'+(v?'+'+v:'0')+' dB</em></div>';}).join('')+'</div>';}).join('')+
+    ['L','R'].map(function(s){return '<div><b>'+(s==='L'?'Links':'Rechts')+'</b>'+PROF_F.map(function(f,i){var v=prof[s][i];return '<div class="htb"><span>'+(f>=1000?f/1000+'k':f)+'</span><i style="--w:'+(Math.min(6,v)/6*100)+'%"></i><em>'+(v?'+'+v:'0')+' dB</em></div>';}).join('')+'</div>';}).join('')+
     '</div><p class="nw-sub">Wo du leiser hörst, hebt Fox Musik den Klang etwas an. Ein- und ausschalten kannst du das Profil unter „Klang-Effekte“.</p><div class="sform"><button class="btn" data-sa="fx">Fertig</button></div>';
   openSheet(sh);
 }
@@ -4007,6 +4013,7 @@ function handleSheet(act,el){
     case 'rectracks':recTracksSheet(sctx.id);break;
     case 'recjump':{var rid=el.dataset.id, rt=parseFloat(el.dataset.t)||0, rs=byId(rid);closeSheet();if(!rs)break;if(!cur||cur.id!==rid){startQueue([rid],0);var ra=audio, rf=function(){ra.removeEventListener('loadedmetadata',rf);try{ra.currentTime=rt;}catch(e){}};ra.addEventListener('loadedmetadata',rf);}else{try{audio.currentTime=rt;}catch(e){}if(audio.paused){var rp=audio.play();if(rp&&rp.catch)rp.catch(function(){});}}break;}
     case 'fx':fxSheet();break;
+    case 'fxreset':state.fx.sp=0;state.fx.ex=0;if(state.fx.prof)state.fx.prof.on=false;state.eq.on=false;state.eq.boost=0;state.level=false;state.skip=false;state.speed=1;eqApply();applySpeed();saveState();fxSheet();toast('Klang zurückgesetzt: Deine Musik spielt jetzt unverändert.');break;
     case 'fxsp':state.fx.sp=parseInt(el.dataset.v,10)||0;fxChanged();fxSheet();break;
     case 'fxex':state.fx.ex=parseInt(el.dataset.v,10)||0;fxChanged();fxSheet();break;
     case 'htest':htStart();break;
