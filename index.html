@@ -590,7 +590,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],recs:{},rdHist:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],recs:{},rdHist:{},rdOrb:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -2171,23 +2171,81 @@ function rdNowTick(){
     var fin=String((r&&r.final)||''), t='';
     if(/streamabc\.net\//i.test(fin)||/streamabc\.net\//i.test(cur.url))t=await rdAbcNow(/streamabc\.net\//i.test(fin)?fin:cur.url);
     if(s!==cur)return;
-    rdSetNow(t||String((r&&r.title)||''));
+    t=t||String((r&&r.title)||'').trim();
+    if(!t&&orbSlug(s)&&Date.now()-orbNowT>60000){orbNowT=Date.now();try{var ol=await orbLoad(orbSlug(s),0);if(ol[0]&&ol[0].now)t=ol[0].t;}catch(e){}if(s!==cur)return;}
+    rdSetNow(t);
   }).catch(function(){});
+}
+/* Playlist des Senders von onlineradiobox.com (heute und die letzten 6 Tage) */
+var ORB_KNOWN=[[/klassik\s*radio.*healing/i,'de/klassikhealing']];
+var orbCache={}, orbDay=0, orbNowT=0;
+function orbSlug(s){
+  var k=rdHistKey(s);if(state.rdOrb[k]==='-')return '';if(state.rdOrb[k])return state.rdOrb[k];
+  for(var i=0;i<ORB_KNOWN.length;i++)if(ORB_KNOWN[i][0].test(s.title||''))return ORB_KNOWN[i][1];
+  return '';
+}
+function orbParseLink(x){var m=String(x||'').match(/onlineradiobox\.com\/([a-z]{2})\/([a-z0-9_-]+)/i);return m?(m[1].toLowerCase()+'/'+m[2]):'';}
+function orbParse(html,day){
+  var d=new DOMParser().parseFromString(html,'text/html'), best=[];
+  [].forEach.call(d.querySelectorAll('table'),function(tb){
+    var rows=[];[].forEach.call(tb.querySelectorAll('tr'),function(tr){var td=tr.querySelectorAll('td');if(td.length<2)return;var a=(td[0].textContent||'').trim(), b=(td[1].textContent||'').replace(/\s+/g,' ').trim();if(b)rows.push({h:a,t:b});});
+    if(rows.length>best.length)best=rows;
+  });
+  if(!best.length)return [];
+  // Die Seite zeigt Zeiten in einer fremden Zeitzone. Der oberste Eintrag läuft gerade: daran wird die Verschiebung abgelesen.
+  function mins(x){var m=String(x).match(/^(\d{1,2}):(\d{2})$/);return m?(+m[1])*60+(+m[2]):-1;}
+  var off=orbCache._off;
+  if(!day){var first=-1;for(var i=0;i<best.length;i++){first=mins(best[i].h);if(first>=0)break;}
+    if(first>=0){var n=new Date(), nm=n.getHours()*60+n.getMinutes(), diff=nm-first;diff=Math.round(diff/30)*30;while(diff>720)diff-=1440;while(diff<-720)diff+=1440;off=orbCache._off=diff;}}
+  if(typeof off!=='number')off=0;
+  return best.map(function(r,i){
+    var m=mins(r.h), lbl='';
+    if(m<0)lbl=(i===0&&!day)?'läuft':'';
+    else{var x=((m+off)%1440+1440)%1440;lbl=('0'+Math.floor(x/60)).slice(-2)+':'+('0'+x%60).slice(-2);}
+    return {time:lbl,t:r.t,now:m<0&&i===0&&!day};
+  });
+}
+async function orbLoad(slug,day){
+  var k=slug+'#'+day, c=orbCache[k];
+  if(c&&Date.now()-c.at<(day?3600e3:90e3))return c.list;
+  var P=UPDP();if(!P||!P.neowakeFetch)throw new Error('Nur in der App verfügbar');
+  var r=await P.neowakeFetch({url:'https://onlineradiobox.com/'+slug+'/playlist/'+(day?day:''),cookies:false});
+  if(!r||r.status>=400||!r.text)throw new Error('Seite nicht erreichbar');
+  var list=orbParse(r.text,day);
+  if(!list.length)throw new Error('Keine Playlist gefunden');
+  orbCache[k]={at:Date.now(),list:list};return list;
+}
+function orbDayName(n){if(!n)return 'Heute';if(n===1)return 'Gestern';var d=new Date(Date.now()-n*864e5);return d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'});}
+function rdHistRows(l){
+  return l.map(function(x){var sp=recSplit(x.t);return '<button class="sitem" data-sa="rdhcopy" data-t="'+esc(x.t)+'"><span><b>'+esc(sp.t)+'</b>'+(sp.a?'<small style="display:block;color:var(--muted)">'+esc(sp.a)+'</small>':'')+'</span><small'+(x.now?' style="color:var(--accent);font-weight:700"':'')+'>'+esc(x.time||'')+'</small></button>';}).join('');
 }
 function rdHistSheet(){
   if(!cur||!cur.live)return;
-  var l=(state.rdHist[rdHistKey(cur)]||[]).slice().reverse();
-  var h='<div class="shead"><div class="rt"><b>Zuletzt gelaufen</b><small>'+esc(cur.title)+'</small></div></div>';
-  if(!l.length)h+='<p class="none">Noch nichts gemerkt. Die Liste füllt sich, während du den Sender hörst.</p>';
-  var day='';
+  var st=cur, slug=orbSlug(st);
+  var h='<div class="shead"><div class="rt"><b>'+(slug?'Playlist des Senders':'Zuletzt gelaufen')+'</b><small>'+esc(st.title)+'</small></div></div>';
+  if(slug&&isNative()){
+    h+='<div class="eqps">'+[0,1,2,3,4,5,6].map(function(n){return '<button class="eqc'+(orbDay===n?' on':'')+'" data-sa="orbday" data-v="'+n+'">'+orbDayName(n)+'</button>';}).join('')+'</div><div id="orbl"><p class="none">Lade Playlist …</p></div>';
+    h+='<p class="nw-sub" style="margin:10px 2px 0">Quelle: onlineradiobox.com · Tippe auf einen Titel, um ihn zu kopieren.</p><button class="sitem" data-sa="orbedit"><span>Anderen Playlist-Link hinterlegen</span></button>';
+    openSheet(h);
+    var day=orbDay;
+    orbLoad(slug,day).then(function(list){var el=$('#orbl');if(el&&orbDay===day&&cur===st)el.innerHTML=rdHistRows(list);})
+      .catch(function(e){var el=$('#orbl');if(el&&cur===st)el.innerHTML='<p class="none">Die Playlist konnte nicht geladen werden ('+esc(spMsg(e))+'). Unten siehst du, was die App selbst gemerkt hat.</p>'+rdOwnHist(st);});
+    return;
+  }
+  h+=rdOwnHist(st);
+  h+='<div class="sform"><p>Viele Sender haben auf onlineradiobox.com eine vollständige Playlist. Öffne dort die Seite deines Senders, tippe auf „Playlist“ und füge den Link hier ein.</p><input id="orbin" placeholder="https://onlineradiobox.com/de/…/playlist/" autocomplete="off" aria-label="Playlist-Link"><button class="btn" data-sa="orbsave">Playlist verknüpfen</button></div>';
+  openSheet(h);
+}
+function rdOwnHist(st){
+  var l=(state.rdHist[rdHistKey(st)]||[]).slice().reverse(), h='', day='';
+  if(!l.length)return '<p class="none">Noch nichts gemerkt. Die Liste füllt sich, während du den Sender hörst.</p>';
   l.forEach(function(x,i){
     var d=new Date(x.at), dk=d.toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'2-digit'});
     if(dk!==day){day=dk;h+='<div class="sec"><h3>'+esc(dk)+'</h3></div>';}
-    var sp=recSplit(x.t);
-    h+='<button class="sitem" data-sa="rdhcopy" data-t="'+esc(x.t)+'"><span><b>'+esc(sp.t)+'</b>'+(sp.a?'<small style="display:block;color:var(--muted)">'+esc(sp.a)+'</small>':'')+'</span><small>'+(i===0&&x.t===cur.nowTitle?'läuft':d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))+'</small></button>';
+    var now=i===0&&x.t===st.nowTitle;
+    h+=rdHistRows([{t:x.t,time:now?'läuft':d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),now:now}]);
   });
-  if(l.length)h+='<p class="nw-sub" style="margin:10px 2px 0">Tippe auf einen Titel, um ihn zu kopieren. Gemerkt wird nur, was läuft, während du den Sender hörst.</p><button class="sitem" data-sa="rdhclear"><span>Verlauf dieses Senders leeren</span></button>';
-  openSheet(h);
+  return h+'<button class="sitem" data-sa="rdhclear"><span>Eigenen Verlauf dieses Senders leeren</span></button>';
 }
 function rdNowStart(){clearInterval(rdNowT);rdNowT=setInterval(rdNowTick,6000);setTimeout(rdNowTick,2500);}
 function rdClick(st){try{rbFetch('/json/url/'+encodeURIComponent(st.uuid)).catch(function(){});}catch(e){}}
@@ -3805,7 +3863,7 @@ function backupText(){
   Object.keys(state.stats||{}).forEach(note);
   var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
     radioFav:state.radioFav||[],
-    alarms:alList(),recs:state.recs,fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
+    alarms:alList(),rdOrb:state.rdOrb,recs:state.recs,fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
     settings:{eq:state.eq,speed:state.speed,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
   return JSON.stringify(data);
 }
@@ -3872,6 +3930,7 @@ async function applyBackup(text){
   (d.pods||[]).forEach(function(p){if(p&&p.feed&&!state.pods.some(function(x){return x.feed===p.feed;}))state.pods.push(p);});
   if(d.yr&&!Object.keys(state.yr||{}).length)state.yr=d.yr;
   if(d.eqDev)Object.keys(d.eqDev).forEach(function(k){if(!state.eqDev[k])state.eqDev[k]=d.eqDev[k];});
+  if(d.rdOrb)Object.keys(d.rdOrb).forEach(function(k){if(!state.rdOrb[k])state.rdOrb[k]=d.rdOrb[k];});
   if(d.recs)Object.keys(d.recs).forEach(function(k){if(!state.recs[k])state.recs[k]=d.recs[k];});
   if(d.tags)Object.keys(d.tags).forEach(function(k){if(!state.tags[k])state.tags[k]=d.tags[k];});
   (d.hideDirs||[]).forEach(function(x){if(state.hideDirs.indexOf(x)<0)state.hideDirs.push(x);});
@@ -4070,6 +4129,10 @@ function handleSheet(act,el){
     case 'tagnew':{var inp=$('#tagin'), nt=((inp&&inp.value)||'').trim().slice(0,30);if(!nt)break;var tl2=state.tags[sctx.id]||(state.tags[sctx.id]=[]);if(tl2.indexOf(nt)<0)tl2.push(nt);saveState();tagSheet(sctx.id);renderMain();break;}
     case 'dups':dupSheet();break;
     case 'rdhcopy':{var ct=el.dataset.t||'';try{navigator.clipboard.writeText(ct).then(function(){toast('Kopiert: '+ct);},function(){toast(ct);});}catch(e){toast(ct);}break;}
+    case 'orbday':orbDay=parseInt(el.dataset.v,10)||0;rdHistSheet();break;
+    case 'orbedit':{if(!cur||!cur.live)break;openSheet('<div class="shead"><div class="rt"><b>Playlist-Link</b><small>'+esc(cur.title)+'</small></div></div><div class="sform" style="padding-top:0"><p>Öffne auf onlineradiobox.com die Seite des Senders, tippe auf „Playlist“ und füge den Link hier ein.</p><input id="orbin" value="'+esc(orbSlug(cur)?'https://onlineradiobox.com/'+orbSlug(cur)+'/playlist/':'')+'" autocomplete="off" aria-label="Playlist-Link"><button class="btn" data-sa="orbsave">Speichern</button><button class="btn ghost" data-sa="orbdel">Verknüpfung entfernen</button></div>');break;}
+    case 'orbsave':{if(!cur||!cur.live)break;var os=orbParseLink(($('#orbin')||{}).value);if(!os){toast('Das ist kein Link von onlineradiobox.com.');break;}state.rdOrb[rdHistKey(cur)]=os;saveState();orbDay=0;rdHistSheet();break;}
+    case 'orbdel':{if(!cur||!cur.live)break;state.rdOrb[rdHistKey(cur)]='-';saveState();rdHistSheet();break;}
     case 'rdhclear':if(cur&&cur.live){delete state.rdHist[rdHistKey(cur)];saveState();rdHistSheet();}break;
     case 'rectracks':recTracksSheet(sctx.id);break;
     case 'recjump':{var rid=el.dataset.id, rt=parseFloat(el.dataset.t)||0, rs=byId(rid);closeSheet();if(!rs)break;if(!cur||cur.id!==rid){startQueue([rid],0);var ra=audio, rf=function(){ra.removeEventListener('loadedmetadata',rf);try{ra.currentTime=rt;}catch(e){}};ra.addEventListener('loadedmetadata',rf);}else{try{audio.currentTime=rt;}catch(e){}if(audio.paused){var rp=audio.play();if(rp&&rp.catch)rp.catch(function(){});}}break;}
@@ -4521,7 +4584,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.rdOrb=saved.rdOrb||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
