@@ -21,6 +21,8 @@ public class RadioProxy {
 
     static final Map<String, String> NOW = new ConcurrentHashMap<String, String>();
     static final Map<String, Long> LAST = new ConcurrentHashMap<String, Long>();
+    // Endgueltige Adresse nach allen Weiterleitungen (fuer die Titel-Schnittstelle des Streaming-Anbieters)
+    static final Map<String, String> FINAL = new ConcurrentHashMap<String, String>();
 
     // Holt alle 15 Sekunden kurz den aktuellen Liedtitel (liest nur bis zum ersten Metadaten-Block).
     static void refresh(final String url) {
@@ -116,6 +118,7 @@ public class RadioProxy {
                 if (type.startsWith("text/html")) {
                     return new WebResourceResponse("text/plain", "utf-8", 415, "Unsupported", out, null);
                 }
+                FINAL.put(url, cur);
                 InputStream in = c.getInputStream();
                 int metaint = 0;
                 try {
@@ -142,6 +145,7 @@ public class RadioProxy {
 
     // Alte SHOUTcast-Server antworten mit "ICY 200 OK", das versteht HttpURLConnection nicht.
     private static WebResourceResponse raw(String cur, String key, Map<String, String> out) throws IOException {
+        FINAL.put(key, cur);
         URL u = new URL(cur);
         int port = u.getPort() > 0 ? u.getPort() : 80;
         Socket s = new Socket();

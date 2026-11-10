@@ -540,7 +540,7 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
     <button class="ib skip" data-act="next" data-ic="next" data-f="1" aria-label="Nächster Titel"></button>
     <button class="ib" data-act="rep" id="pRep" aria-label="Wiederholen"></button>
   </div>
-  <div class="pextra"><button class="ib" data-act="back15" id="pB15" aria-label="15 Sekunden zurück" hidden><svg class="i" aria-hidden="true"><use href="#i-back15"/></svg></button><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button><button class="pill" data-act="rec" id="pRec" hidden><svg class="i" aria-hidden="true"><use href="#i-rec"/></svg><span>Aufnehmen</span></button><button class="pill" data-act="queue"><svg class="i" aria-hidden="true"><use href="#i-queue"/></svg>Warteschlange</button><button class="pill spd" data-act="spd" id="pSpd" aria-label="Tempo" hidden>1×</button><button class="ib" data-act="fwd15" id="pF15" aria-label="15 Sekunden vor" hidden><svg class="i" aria-hidden="true"><use href="#i-fwd15"/></svg></button></div>
+  <div class="pextra"><button class="ib" data-act="back15" id="pB15" aria-label="15 Sekunden zurück" hidden><svg class="i" aria-hidden="true"><use href="#i-back15"/></svg></button><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button><button class="pill" data-act="rec" id="pRec" hidden><svg class="i" aria-hidden="true"><use href="#i-rec"/></svg><span>Aufnehmen</span></button><button class="pill" data-act="queue"><svg class="i" aria-hidden="true"><use href="#i-queue"/></svg>Warteschlange</button><button class="pill" data-act="rdhist" id="pHist" hidden><svg class="i" aria-hidden="true"><use href="#i-list"/></svg>Verlauf</button><button class="pill spd" data-act="spd" id="pSpd" aria-label="Tempo" hidden>1×</button><button class="ib" data-act="fwd15" id="pF15" aria-label="15 Sekunden vor" hidden><svg class="i" aria-hidden="true"><use href="#i-fwd15"/></svg></button></div>
 </section>
 
 <div class="scrim" id="scrim" data-sa="cancel"></div>
@@ -590,7 +590,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],recs:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,tags:{},hideDirs:[],recs:{},rdHist:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -1224,12 +1224,12 @@ function updateNow(){
   }
   $('#pCovWrap').innerHTML=coverHTML(cur,'big');
   $('#pT').textContent=dispT(cur);
-  $('#pA').textContent=cur._rn?dispA(cur):((cur.artist||NOARTIST)+(cur.album?' · '+cur.album:''));
+  $('#pA').textContent=(cur._rn||cur.live)?(dispA(cur)||NOARTIST):((cur.artist||NOARTIST)+(cur.album?' · '+cur.album:''));
   var u=coverURL(cur), bg=$('#pBg');
   bg.style.backgroundImage=u?'url('+u+')':'linear-gradient(160deg,hsl('+hue(cur.album||cur.title)+' 55% 55%),hsl('+(hue(cur.album||cur.title)+40)+' 58% 35%))';
   $('#tDur').textContent=fmtDur(cur,cur.duration);
   if(!miniSp())tintFor(cur);
-  longUi();recUi();
+  longUi();recUi();var hb=$('#pHist');if(hb)hb.hidden=!cur.live;
   updateFav();updateTransport();renderMain();
   if(lyrOpen)lyrRender();
 }
@@ -2122,13 +2122,72 @@ function rdAddOwn(){
 function rdGenreName(tag){for(var i=0;i<RD_GENRES.length;i++)if(RD_GENRES[i][1]===tag)return RD_GENRES[i][0];return tag;}
 // laufender Titel aus den Senderdaten
 var rdNowT=null;
+/* Was läuft gerade: zuerst die Titel-Schnittstelle des Streaming-Anbieters (streamABC, z. B. Klassik Radio), sonst der Titel aus dem Stream */
+var rdAbc={}, rdAbcT=0, rdAbcLast='';
+function rdAbcCands(m){
+  var x=String(m||'').match(/^([a-z0-9]+)-(.+?)-(mp3|aac|aacp|aacplus|ogg|opus|flac)(-|$)/i);if(!x)return [];
+  var a=x[1], b=x[2], o=[a+'_'+b,a+'-'+b,(a+'_'+b).toLowerCase(),a+'_'+b.replace(/-/g,'_'),b];
+  return o.filter(function(v,i){return o.indexOf(v)===i;});
+}
+async function rdAbcNow(fin){
+  var P=UPDP();if(!P||!P.neowakeFetch)return '';
+  var mount=String(fin||'').split('?')[0].split('/').filter(Boolean).pop()||'', known=rdAbc[mount];
+  if(known===false)return '';
+  if(Date.now()-rdAbcT<9000)return rdAbcLast;rdAbcT=Date.now();
+  var cands=known?[known]:rdAbcCands(mount);
+  for(var i=0;i<cands.length;i++){
+    try{
+      var r=await P.neowakeFetch({url:'https://api.streamabc.net/metadata/channel/'+encodeURIComponent(cands[i])+'.json',cookies:false});
+      if(r&&r.status===200&&r.text){
+        var j=JSON.parse(r.text), x=Array.isArray(j)?(j.filter(function(v){return v&&v.type==='now';})[0]||j[0]):j;
+        if(x&&typeof x==='object'&&('song' in x||'artist' in x)){
+          rdAbc[mount]=cands[i];
+          var song=String(x.song||'').trim(), art=String(x.artist||'').trim();
+          rdAbcLast=song?((art?art+' - ':'')+song):'';return rdAbcLast;
+        }
+      }
+    }catch(e){}
+  }
+  if(!known)rdAbc[mount]=false;
+  return '';
+}
+function rdHistKey(s){return (s.radio&&s.radio.uuid)||s.id;}
+function rdHistAdd(s,t){
+  var k=rdHistKey(s), l=state.rdHist[k]||(state.rdHist[k]=[]);
+  if(l.length&&l[l.length-1].t===t)return;
+  l.push({t:t,at:Date.now()});if(l.length>300)l.splice(0,l.length-300);
+  saveStatsSoon();
+}
+function rdSetNow(t){
+  t=String(t||'').trim();
+  if(!cur||!cur.live||!t||t===cur.nowTitle)return;
+  cur.nowTitle=t;cur.artist=t;rdHistAdd(cur,t);lyrKey='';updateNow();pushNative();
+}
 function rdNowTick(){
   if(!cur||!cur.live||!audio||audio.paused)return;
-  var P=UPDP();if(!P||!P.radioNow)return;
-  P.radioNow({url:cur.url}).then(function(r){
-    var t=String((r&&r.title)||'').trim();
-    if(t&&t!==cur.nowTitle){cur.nowTitle=t;cur.artist=t;lyrKey='';updateNow();pushNative();}
+  var P=UPDP();if(!P||!P.radioNow)return;var s=cur;
+  P.radioNow({url:cur.url}).then(async function(r){
+    if(s!==cur)return;
+    var fin=String((r&&r.final)||''), t='';
+    if(/streamabc\.net\//i.test(fin)||/streamabc\.net\//i.test(cur.url))t=await rdAbcNow(/streamabc\.net\//i.test(fin)?fin:cur.url);
+    if(s!==cur)return;
+    rdSetNow(t||String((r&&r.title)||''));
   }).catch(function(){});
+}
+function rdHistSheet(){
+  if(!cur||!cur.live)return;
+  var l=(state.rdHist[rdHistKey(cur)]||[]).slice().reverse();
+  var h='<div class="shead"><div class="rt"><b>Zuletzt gelaufen</b><small>'+esc(cur.title)+'</small></div></div>';
+  if(!l.length)h+='<p class="none">Noch nichts gemerkt. Die Liste füllt sich, während du den Sender hörst.</p>';
+  var day='';
+  l.forEach(function(x,i){
+    var d=new Date(x.at), dk=d.toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'2-digit'});
+    if(dk!==day){day=dk;h+='<div class="sec"><h3>'+esc(dk)+'</h3></div>';}
+    var sp=recSplit(x.t);
+    h+='<button class="sitem" data-sa="rdhcopy" data-t="'+esc(x.t)+'"><span><b>'+esc(sp.t)+'</b>'+(sp.a?'<small style="display:block;color:var(--muted)">'+esc(sp.a)+'</small>':'')+'</span><small>'+(i===0&&x.t===cur.nowTitle?'läuft':d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))+'</small></button>';
+  });
+  if(l.length)h+='<p class="nw-sub" style="margin:10px 2px 0">Tippe auf einen Titel, um ihn zu kopieren. Gemerkt wird nur, was läuft, während du den Sender hörst.</p><button class="sitem" data-sa="rdhclear"><span>Verlauf dieses Senders leeren</span></button>';
+  openSheet(h);
 }
 function rdNowStart(){clearInterval(rdNowT);rdNowT=setInterval(rdNowTick,6000);setTimeout(rdNowTick,2500);}
 function rdClick(st){try{rbFetch('/json/url/'+encodeURIComponent(st.uuid)).catch(function(){});}catch(e){}}
@@ -2955,8 +3014,8 @@ function recSplit(x){x=String(x||'').trim();var m=x.match(/^(.+?)\s+[-–—]\s+
 function recFile(s){return String((s&&s.path)||'').split('/').pop();}
 function recInfo(s){return isRec(s)?(state.recs||{})[recFile(s)]||null:null;}
 function recSub(s){var i=recInfo(s);if(!i)return '';var n=(i.tracks||[]).length;return 'Aufnahme · '+(i.st||'Radio')+(n>1?' · '+n+' Titel':'');}
-function dispT(s){return s&&s._rn?s._rn.t:(s?s.title:'');}
-function dispA(s){return s&&s._rn?((s._rn.a?s._rn.a+' · ':'')+(s._rn.st||'Aufnahme')):(s?s.artist:'');}
+function dispT(s){if(!s)return '';if(s._rn)return s._rn.t;if(s.live&&s.nowTitle)return recSplit(s.nowTitle).t||s.title;return s.title;}
+function dispA(s){if(!s)return '';if(s._rn)return (s._rn.a?s._rn.a+' · ':'')+(s._rn.st||'Aufnahme');if(s.live&&s.nowTitle){var a=recSplit(s.nowTitle).a;return (a?a+' · ':'')+s.title;}return s.artist;}
 function recTick(){
   if(!cur)return;var i=recInfo(cur);
   if(!i||!i.tracks||!i.tracks.length){if(cur._rn){delete cur._rn;updateNow();}return;}
@@ -4010,6 +4069,8 @@ function handleSheet(act,el){
     case 'tagt':{var tl=state.tags[sctx.id]||(state.tags[sctx.id]=[]), tt=el.dataset.t, ti=tl.indexOf(tt);if(ti<0)tl.push(tt);else tl.splice(ti,1);if(!tl.length)delete state.tags[sctx.id];saveState();tagSheet(sctx.id);renderMain();break;}
     case 'tagnew':{var inp=$('#tagin'), nt=((inp&&inp.value)||'').trim().slice(0,30);if(!nt)break;var tl2=state.tags[sctx.id]||(state.tags[sctx.id]=[]);if(tl2.indexOf(nt)<0)tl2.push(nt);saveState();tagSheet(sctx.id);renderMain();break;}
     case 'dups':dupSheet();break;
+    case 'rdhcopy':{var ct=el.dataset.t||'';try{navigator.clipboard.writeText(ct).then(function(){toast('Kopiert: '+ct);},function(){toast(ct);});}catch(e){toast(ct);}break;}
+    case 'rdhclear':if(cur&&cur.live){delete state.rdHist[rdHistKey(cur)];saveState();rdHistSheet();}break;
     case 'rectracks':recTracksSheet(sctx.id);break;
     case 'recjump':{var rid=el.dataset.id, rt=parseFloat(el.dataset.t)||0, rs=byId(rid);closeSheet();if(!rs)break;if(!cur||cur.id!==rid){startQueue([rid],0);var ra=audio, rf=function(){ra.removeEventListener('loadedmetadata',rf);try{ra.currentTime=rt;}catch(e){}};ra.addEventListener('loadedmetadata',rf);}else{try{audio.currentTime=rt;}catch(e){}if(audio.paused){var rp=audio.play();if(rp&&rp.catch)rp.catch(function(){});}}break;}
     case 'fx':fxSheet();break;
@@ -4182,6 +4243,7 @@ document.addEventListener('click',function(e){
     case 'queue':queueSheet();break;
     case 'rec':recToggle();break;
     case 'spd':spdSheet();break;
+    case 'rdhist':rdHistSheet();break;
     case 'wrap':wrapOpen();break;
     case 'wrapnext':if(wrapI<wrapCards.length-1){wrapI++;wrapShow();}else wrapClose();break;
     case 'wrapprev':if(wrapI>0){wrapI--;wrapShow();}break;
@@ -4459,7 +4521,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;

@@ -943,6 +943,8 @@ public class UpdatePlugin extends Plugin {
         String t = RadioProxy.NOW.get(ru);
         JSObject o = new JSObject();
         o.put("title", t == null ? "" : t);
+        String fin = RadioProxy.FINAL.get(ru);
+        o.put("final", fin == null ? "" : fin);
         call.resolve(o);
     }
 
