@@ -114,6 +114,23 @@ function png(r, g, b) {
     }
     ok(step);
 
+    step = 'Startseite anpassen';
+    await p.click('[data-act="settings"]'); await p.waitForTimeout(350);
+    await p.click('[data-sa="homeedit"]'); await p.waitForTimeout(350);
+    check(await p.locator('#sheet [data-sa="homedown"]').count() >= 5, 'Liste der Bereiche fehlt');
+    await p.click('#sheet [data-sa="homedown"] >> nth=0'); await p.waitForTimeout(300);
+    await closeSheet();
+    ok(step);
+
+    step = 'Suche für alles';
+    await p.click('[data-n="search"] >> nth=0'); await p.waitForTimeout(400);
+    await p.fill('#q', 'Alpha'); await p.waitForTimeout(500);
+    const found = await text('#main');
+    check(found.includes('Erster Titel') && found.includes('Interpreten'), 'Suche zeigt Titel und Interpreten nicht: ' + found.slice(0, 120));
+    await p.fill('#q', ''); await p.waitForTimeout(300);
+    await p.click('.nb[data-n="lib"]'); await p.waitForTimeout(300);
+    ok(step);
+
     step = 'Podcasts, Playlists, Ordner';
     for (const tab of ['podcasts', 'playlists', 'albums', 'artists', 'folders']) {
       await p.click('[data-tab="' + tab + '"]'); await p.waitForTimeout(300);

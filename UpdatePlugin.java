@@ -837,6 +837,7 @@ public class UpdatePlugin extends Plugin {
     // ---- Radio aufnehmen ----
     @PluginMethod
     public void recStart(PluginCall call) {
+        RadioRec.maxMinutes = call.getInt("minutes", 0);
         boolean ok = RadioRec.start(getContext(), call.getString("url", ""), call.getString("name", "Radio"));
         JSObject o = new JSObject();
         o.put("ok", ok);
@@ -1320,6 +1321,94 @@ public class UpdatePlugin extends Plugin {
                 bm.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, jo);
                 JSObject o = new JSObject();
                 o.put("data", android.util.Base64.encodeToString(jo.toByteArray(), android.util.Base64.NO_WRAP));
+                call.resolve(o);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    // ---- Aufnahme in einzelne Lieder aufteilen / Aufnahme loeschen ----
+    @PluginMethod
+    public void recSplit(final PluginCall call) {
+        final Context ctx = getContext();
+        final String file = call.getString("file", "");
+        final com.getcapacitor.JSArray parts = call.getArray("parts");
+        new Thread(() -> {
+            try {
+                int n = parts == null ? 0 : parts.length();
+                if (n < 2) {
+                    call.reject("Nichts aufzuteilen");
+                    return;
+                }
+                long[] cuts = new long[n];
+                String[] names = new String[n];
+                for (int i = 0; i < n; i++) {
+                    org.json.JSONObject o = parts.getJSONObject(i);
+                    cuts[i] = o.optLong("b", 0);
+                    names[i] = o.optString("name", "Titel " + (i + 1));
+                }
+                java.util.List<String[]> res = RadioRec.split(ctx, file, cuts, names);
+                com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
+                for (String[] r : res) {
+                    JSObject x = new JSObject();
+                    x.put("file", r[0]);
+                    x.put("bytes", Long.parseLong(r[1]));
+                    arr.put(x);
+                }
+                JSObject o = new JSObject();
+                o.put("files", arr);
+                call.resolve(o);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void recDelete(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("ok", RadioRec.delete(getContext(), call.getString("file", "")));
+        call.resolve(o);
+    }
+
+    // ---- Sicherungsdatei mit Androids Dateiauswahl oeffnen ----
+    @PluginMethod
+    public void pickText(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain", "application/octet-stream"});
+        startActivityForResult(call, Intent.createChooser(i, "Sicherung wählen"), "textPicked");
+    }
+
+    @ActivityCallback
+    private void textPicked(final PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        Intent d = result.getData();
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || d == null || d.getData() == null) {
+            call.reject("abgebrochen");
+            return;
+        }
+        final Uri uri = d.getData();
+        final Context ctx = getContext();
+        new Thread(() -> {
+            try {
+                InputStream in = ctx.getContentResolver().openInputStream(uri);
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    bo.write(buf, 0, n);
+                    if (bo.size() > 80 * 1024 * 1024) {
+                        throw new Exception("Datei ist zu groß");
+                    }
+                }
+                in.close();
+                JSObject o = new JSObject();
+                o.put("text", new String(bo.toByteArray(), "UTF-8"));
                 call.resolve(o);
             } catch (Exception e) {
                 call.reject(String.valueOf(e.getMessage()));

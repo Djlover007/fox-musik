@@ -25,6 +25,8 @@ public class RadioRec {
     static volatile long started = 0;
     static volatile String file = "";
     static volatile String error = "";
+    // Geplante Aufnahme: nach so vielen Minuten von selbst aufhoeren (0 = hoechstens 4 Stunden)
+    static volatile int maxMinutes = 0;
     // Titelwechsel waehrend der Aufnahme: Position in Bytes + Text aus dem Sender ("Interpret - Titel")
     static final java.util.List<String[]> tracks = java.util.Collections.synchronizedList(new java.util.ArrayList<String[]>());
 
@@ -119,7 +121,7 @@ public class RadioRec {
                     }
                     byte[] buf = new byte[32768];
                     int n;
-                    long maxEnd = System.currentTimeMillis() + 4L * 60 * 60 * 1000;
+                    long maxEnd = System.currentTimeMillis() + (maxMinutes > 0 ? Math.min(240, maxMinutes) : 240) * 60L * 1000;
                     // Anfang puffern und erst ab dem ersten vollstaendigen Ton-Paket schreiben
                     java.io.ByteArrayOutputStream head = new java.io.ByteArrayOutputStream();
                     while (!stop && head.size() < 24000 && (n = in.read(buf)) > 0) {
@@ -187,5 +189,204 @@ public class RadioRec {
             }
         }).start();
         return true;
+    }
+
+    // ---- Aufnahme an den Titelgrenzen in einzelne Dateien aufteilen ----
+    private static String mimeOf(String ext) {
+        return ext.equals("aac") ? "audio/aac" : ext.equals("ogg") ? "audio/ogg" : "audio/mpeg";
+    }
+
+    private static File legacyDir(Context ctx) {
+        return new File(ctx.getExternalFilesDir(Environment.DIRECTORY_MUSIC), "Fox Radio");
+    }
+
+    private static Uri findItem(Context ctx, String file) {
+        android.database.Cursor c = null;
+        try {
+            c = ctx.getContentResolver().query(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+                new String[]{MediaStore.Audio.Media._ID},
+                MediaStore.Audio.Media.DISPLAY_NAME + "=? AND " + MediaStore.Audio.Media.RELATIVE_PATH + " LIKE ?",
+                new String[]{file, "%Fox Radio%"}, null);
+            if (c != null && c.moveToFirst()) {
+                return android.content.ContentUris.withAppendedId(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), c.getLong(0));
+            }
+        } catch (Exception e) {
+            // ignore
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        return null;
+    }
+
+    static boolean delete(Context ctx, String file) {
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                Uri u = findItem(ctx, file);
+                return u != null && ctx.getContentResolver().delete(u, null, null) > 0;
+            }
+            return new File(legacyDir(ctx), file).delete();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static int readFully(InputStream in, byte[] b, int want) throws java.io.IOException {
+        int got = 0;
+        while (got < want) {
+            int n = in.read(b, got, want - got);
+            if (n <= 0) {
+                break;
+            }
+            got += n;
+        }
+        return got;
+    }
+
+    interface Sink {
+        OutputStream open(int part) throws Exception;
+
+        void done(int part, long bytes) throws Exception;
+    }
+
+    // Kern des Aufteilens: liest die Aufnahme einmal durch und wechselt an jeder Schnittstelle die Zieldatei.
+    // Getrennt wird am naechsten vollstaendigen Ton-Paket nach der Schnittstelle, damit kein Teil knackt.
+    static void splitStream(InputStream in, long[] cuts, boolean aac, boolean ogg, Sink sink) throws Exception {
+        byte[] buf = new byte[32768];
+        long pos = 0, partBytes = 0;
+        int part = 0;
+        OutputStream os = sink.open(0);
+        try {
+            while (true) {
+                long next = part + 1 < cuts.length ? cuts[part + 1] : Long.MAX_VALUE;
+                if (next <= pos) {
+                    int n = readFully(in, buf, 16384);
+                    if (n <= 0) {
+                        break;
+                    }
+                    int off = ogg ? 0 : syncOffset(buf, n, aac);
+                    os.write(buf, 0, off);
+                    partBytes += off;
+                    os.close();
+                    os = null;
+                    sink.done(part, partBytes);
+                    part++;
+                    os = sink.open(part);
+                    os.write(buf, off, n - off);
+                    partBytes = n - off;
+                    pos += n;
+                    continue;
+                }
+                int n = in.read(buf, 0, (int) Math.min(buf.length, next - pos));
+                if (n <= 0) {
+                    break;
+                }
+                os.write(buf, 0, n);
+                pos += n;
+                partBytes += n;
+            }
+            os.close();
+            os = null;
+            sink.done(part, partBytes);
+        } finally {
+            if (os != null) {
+                try {
+                    os.close();
+                } catch (Exception e) {
+                    // ignore
+                }
+            }
+        }
+    }
+
+    // Ergebnis je Teil: {Dateiname, Bytes}
+    static java.util.List<String[]> split(final Context ctx, String file, long[] cuts, final String[] names) throws Exception {
+        final java.util.List<String[]> out = new java.util.ArrayList<String[]>();
+        int dot = file.lastIndexOf('.');
+        final String ext = dot > 0 ? file.substring(dot + 1).toLowerCase(Locale.ROOT) : "mp3";
+        InputStream in;
+        if (Build.VERSION.SDK_INT >= 29) {
+            Uri src = findItem(ctx, file);
+            if (src == null) {
+                throw new Exception("Aufnahme nicht gefunden");
+            }
+            in = ctx.getContentResolver().openInputStream(src);
+        } else {
+            in = new java.io.FileInputStream(new File(legacyDir(ctx), file));
+        }
+        in = new java.io.BufferedInputStream(in, 65536);
+        final Uri[] item = new Uri[1];
+        final String[] curName = new String[1];
+        try {
+            splitStream(in, cuts, ext.equals("aac"), ext.equals("ogg"), new Sink() {
+                @Override
+                public OutputStream open(int part) throws Exception {
+                    String nm = names[part].replaceAll("[\\\\/:*?\"<>|]", " ").replaceAll("\\s+", " ").trim();
+                    if (nm.length() > 90) {
+                        nm = nm.substring(0, 90).trim();
+                    }
+                    if (nm.isEmpty()) {
+                        nm = "Titel " + (part + 1);
+                    }
+                    item[0] = null;
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        curName[0] = nm + "." + ext;
+                        ContentValues v = new ContentValues();
+                        v.put(MediaStore.Audio.Media.DISPLAY_NAME, curName[0]);
+                        v.put(MediaStore.Audio.Media.MIME_TYPE, mimeOf(ext));
+                        v.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Fox Radio");
+                        v.put(MediaStore.Audio.Media.IS_MUSIC, 1);
+                        v.put(MediaStore.Audio.Media.IS_PENDING, 1);
+                        item[0] = ctx.getContentResolver().insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
+                        return ctx.getContentResolver().openOutputStream(item[0]);
+                    }
+                    File dir = legacyDir(ctx);
+                    dir.mkdirs();
+                    File f = new File(dir, nm + "." + ext);
+                    for (int k = 1; f.exists(); k++) {
+                        f = new File(dir, nm + " (" + k + ")." + ext);
+                    }
+                    curName[0] = f.getName();
+                    return new FileOutputStream(f);
+                }
+
+                @Override
+                public void done(int part, long bytes) {
+                    out.add(new String[]{finish(ctx, item[0], curName[0]), String.valueOf(bytes)});
+                }
+            });
+        } finally {
+            try {
+                in.close();
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        return out;
+    }
+
+    private static String finish(Context ctx, Uri item, String name) {
+        if (item == null) {
+            return name;
+        }
+        try {
+            ContentValues done = new ContentValues();
+            done.put(MediaStore.Audio.Media.IS_PENDING, 0);
+            ctx.getContentResolver().update(item, done, null, null);
+            android.database.Cursor c = ctx.getContentResolver().query(item, new String[]{MediaStore.Audio.Media.DISPLAY_NAME}, null, null, null);
+            if (c != null) {
+                try {
+                    if (c.moveToFirst() && c.getString(0) != null) {
+                        return c.getString(0);
+                    }
+                } finally {
+                    c.close();
+                }
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return name;
     }
 }
