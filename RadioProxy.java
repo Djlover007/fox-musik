@@ -23,6 +23,8 @@ public class RadioProxy {
     static final Map<String, Long> LAST = new ConcurrentHashMap<String, Long>();
     // Endgueltige Adresse nach allen Weiterleitungen (fuer die Titel-Schnittstelle des Streaming-Anbieters)
     static final Map<String, String> FINAL = new ConcurrentHashMap<String, String>();
+    // Wann der Titel zuletzt wirklich vom Sender kam (damit ein alter Titel nicht ewig als aktuell gilt)
+    static final Map<String, Long> NOWT = new ConcurrentHashMap<String, Long>();
 
     // Holt alle 15 Sekunden kurz den aktuellen Liedtitel (liest nur bis zum ersten Metadaten-Block).
     static void refresh(final String url) {
@@ -252,6 +254,7 @@ public class RadioProxy {
                     String t = (b > a ? s.substring(a + 13, b) : s.substring(a + 13)).trim();
                     if (t.length() > 0) {
                         NOW.put(key, t);
+                        NOWT.put(key, System.currentTimeMillis());
                         titleSeen = true;
                     }
                 }

@@ -2142,7 +2142,7 @@ function rdGenreName(tag){for(var i=0;i<RD_GENRES.length;i++)if(RD_GENRES[i][1]=
 // laufender Titel aus den Senderdaten
 var rdNowT=null;
 /* Was läuft gerade: zuerst die Titel-Schnittstelle des Streaming-Anbieters (streamABC, z. B. Klassik Radio), sonst der Titel aus dem Stream */
-var rdAbc={}, rdAbcT=0, rdAbcLast='';
+var rdAbc={}, rdAbcT=0, rdAbcLast='', rdAbcM='', rdDiag={};
 function rdAbcCands(m){
   var x=String(m||'').match(/^([a-z0-9]+)-(.+?)-(mp3|aac|aacp|aacplus|ogg|opus|flac)(-|$)/i);if(!x)return [];
   var a=x[1], b=x[2], o=[a+'_'+b,a+'-'+b,(a+'_'+b).toLowerCase(),a+'_'+b.replace(/-/g,'_'),b];
@@ -2152,7 +2152,7 @@ async function rdAbcNow(fin){
   var P=UPDP();if(!P||!P.neowakeFetch)return '';
   var mount=String(fin||'').split('?')[0].split('/').filter(Boolean).pop()||'', known=rdAbc[mount];
   if(known===false)return '';
-  if(Date.now()-rdAbcT<9000)return rdAbcLast;rdAbcT=Date.now();
+  if(rdAbcM===mount&&Date.now()-rdAbcT<9000)return rdAbcLast;rdAbcT=Date.now();rdAbcM=mount;rdAbcLast='';
   var cands=known?[known]:rdAbcCands(mount);
   for(var i=0;i<cands.length;i++){
     try{
@@ -2182,24 +2182,43 @@ function rdSetNow(t){
   if(!cur||!cur.live||!t||t===cur.nowTitle)return;
   cur.nowTitle=t;cur.artist=t;rdHistAdd(cur,t);lyrKey='';updateNow();pushNative();
 }
+// Reihenfolge der Quellen: 1. Titel-Schnittstelle des Anbieters, 2. Playlist-Seite des Senders (wenn verknüpft),
+// 3. Titel aus dem Stream, aber nur wenn er frisch ist. Während einer Aufnahme ist der Stream-Titel exakt und geht vor.
+function orbPickNow(list,st){
+  var x=list&&list[0];if(!x)return '';
+  if(x.now&&!rdJunk(x.t,st))return x.t;
+  if(!x.now&&x.age>=0&&x.age<=7&&!rdJunk(x.t,st))return x.t;
+  return '';
+}
 function rdNowTick(){
   if(!cur||!cur.live||!audio||audio.paused)return;
   var P=UPDP();if(!P||!P.radioNow)return;var s=cur;
   P.radioNow({url:cur.url}).then(async function(r){
     if(s!==cur)return;
-    var fin=String((r&&r.final)||''), t='';
-    if(/streamabc\.net\//i.test(fin)||/streamabc\.net\//i.test(cur.url))t=await rdAbcNow(/streamabc\.net\//i.test(fin)?fin:cur.url);
-    if(s!==cur)return;
-    if(!t){t=String((r&&r.title)||'').trim();if(rdJunk(t,s.title))t='';}
-    if(!t&&orbSlug(s)){
-      if(Date.now()-orbNowT>40000){orbNowT=Date.now();try{var ol=await orbLoad(orbSlug(s),0);orbNowTitle=(ol[0]&&ol[0].now&&!rdJunk(ol[0].t,s.title))?ol[0].t:'';}catch(e){}if(s!==cur)return;}
-      t=orbNowTitle;
+    var fin=String((r&&r.final)||''), t='', src='', slug=orbSlug(s);
+    var icy=String((r&&r.title)||'').trim(), age=(r&&typeof r.age==='number')?r.age:-1, rec=recOn&&recUrl===s.url;
+    var icyOk=!!icy&&!rdJunk(icy,s.title);
+    rdDiag={icy:icy,age:age,fin:fin.replace(/^https?:\/\//,'').split('?')[0],slug:slug,abc:'',orb:rdDiag.orb||'',orbErr:rdDiag.orbErr||''};
+    if(rec&&icyOk){t=icy;src='Stream (Aufnahme)';}
+    if(!t&&(/streamabc\.net\//i.test(fin)||/streamabc\.net\//i.test(s.url))){t=await rdAbcNow(/streamabc\.net\//i.test(fin)?fin:s.url);if(s!==cur)return;rdDiag.abc=t||'nichts';if(t)src='Anbieter';}
+    if(!t&&slug){
+      if(Date.now()-orbNowT>40000){orbNowT=Date.now();try{var ol=await orbLoad(slug,0);orbNowTitle=orbPickNow(ol,s.title);rdDiag.orb=orbNowTitle||('kein aktueller Eintrag ('+((ol[0]&&ol[0].time)||'?')+')');rdDiag.orbErr='';}catch(e){rdDiag.orbErr=spMsg(e);}if(s!==cur)return;}
+      t=orbNowTitle;if(t)src='Playlist-Seite';
     }
+    if(!t&&icyOk&&(age<0||age<420||!slug)){t=icy;src='Stream';}
+    rdDiag.src=src||'keine';rdDiag.at=Date.now();
     rdSetNow(t);
-  }).catch(function(){});
+  }).catch(function(e){rdDiag={err:spMsg(e),at:Date.now()};});
+}
+function rdDiagHTML(){
+  var d=rdDiag||{};
+  return '<div class="sec"><h3>Diagnose Titelanzeige</h3></div><p class="nw-sub" style="margin:0 2px;line-height:1.6">'+
+    'Quelle gerade: <b>'+esc(d.src||'–')+'</b><br>Stream-Titel: '+esc(d.icy||'leer')+(d.age>=0?' (vor '+d.age+' s)':'')+
+    '<br>Anbieter-Schnittstelle: '+esc(d.abc||'nicht zuständig')+'<br>Playlist-Seite: '+esc(d.slug?(d.orbErr?'Fehler: '+d.orbErr:(d.orb||'noch nicht abgefragt')):'nicht verknüpft')+
+    '<br>Adresse: '+esc(d.fin||'unbekannt')+(d.err?'<br>Fehler: '+esc(d.err):'')+'</p>';
 }
 /* Playlist des Senders von onlineradiobox.com (heute und die letzten 6 Tage) */
-var ORB_KNOWN=[[/klassik\s*radio.*healing/i,'de/klassikhealing']];
+var ORB_KNOWN=[[/^(?=.*klassik)(?=.*healing)/i,'de/klassikhealing']];
 var orbCache={}, orbDay=0, orbNowT=0, orbNowTitle='';
 function orbSlug(s){
   var k=rdHistKey(s);if(state.rdOrb[k]==='-')return '';if(state.rdOrb[k])return state.rdOrb[k];
@@ -2224,7 +2243,8 @@ function orbParse(html,day){
     var m=mins(r.h), lbl='';
     if(m<0)lbl=(i===0&&!day)?'läuft':'';
     else{var x=((m+off)%1440+1440)%1440;lbl=('0'+Math.floor(x/60)).slice(-2)+':'+('0'+x%60).slice(-2);}
-    return {time:lbl,t:r.t,now:m<0&&i===0&&!day};
+    var age=-1;if(m>=0&&!day){var nn=new Date(), cm=nn.getHours()*60+nn.getMinutes();age=((cm-(((m+off)%1440+1440)%1440))%1440+1440)%1440;}
+    return {time:lbl,t:r.t,now:m<0&&i===0&&!day,age:age};
   });
 }
 async function orbLoad(slug,day){
@@ -2247,7 +2267,7 @@ function rdHistSheet(){
   var h='<div class="shead"><div class="rt"><b>'+(slug?'Playlist des Senders':'Zuletzt gelaufen')+'</b><small>'+esc(st.title)+'</small></div></div>';
   if(slug&&isNative()){
     h+='<div class="eqps">'+[0,1,2,3,4,5,6].map(function(n){return '<button class="eqc'+(orbDay===n?' on':'')+'" data-sa="orbday" data-v="'+n+'">'+orbDayName(n)+'</button>';}).join('')+'</div><div id="orbl"><p class="none">Lade Playlist …</p></div>';
-    h+='<p class="nw-sub" style="margin:10px 2px 0">Quelle: onlineradiobox.com · Tippe auf einen Titel, um ihn zu kopieren.</p><button class="sitem" data-sa="orbedit"><span>Anderen Playlist-Link hinterlegen</span></button>';
+    h+='<p class="nw-sub" style="margin:10px 2px 0">Quelle: onlineradiobox.com · Tippe auf einen Titel, um ihn zu kopieren.</p><button class="sitem" data-sa="orbedit"><span>Anderen Playlist-Link hinterlegen</span></button>'+rdDiagHTML();
     openSheet(h);
     var day=orbDay;
     orbLoad(slug,day).then(function(list){var el=$('#orbl');if(el&&orbDay===day&&cur===st)el.innerHTML=rdHistRows(list);})
@@ -2255,7 +2275,7 @@ function rdHistSheet(){
     return;
   }
   h+=rdOwnHist(st);
-  h+='<div class="sform"><p>Viele Sender haben auf onlineradiobox.com eine vollständige Playlist. Öffne dort die Seite deines Senders, tippe auf „Playlist“ und füge den Link hier ein.</p><input id="orbin" placeholder="https://onlineradiobox.com/de/…/playlist/" autocomplete="off" aria-label="Playlist-Link"><button class="btn" data-sa="orbsave">Playlist verknüpfen</button></div>';
+  h+='<div class="sform"><p>Viele Sender haben auf onlineradiobox.com eine vollständige Playlist. Öffne dort die Seite deines Senders, tippe auf „Playlist“ und füge den Link hier ein.</p><input id="orbin" placeholder="https://onlineradiobox.com/de/…/playlist/" autocomplete="off" aria-label="Playlist-Link"><button class="btn" data-sa="orbsave">Playlist verknüpfen</button></div>'+rdDiagHTML();
   openSheet(h);
 }
 function rdOwnHist(st){
@@ -4154,7 +4174,7 @@ function handleSheet(act,el){
     case 'rdhcopy':{var ct=el.dataset.t||'';try{navigator.clipboard.writeText(ct).then(function(){toast('Kopiert: '+ct);},function(){toast(ct);});}catch(e){toast(ct);}break;}
     case 'orbday':orbDay=parseInt(el.dataset.v,10)||0;rdHistSheet();break;
     case 'orbedit':{if(!cur||!cur.live)break;openSheet('<div class="shead"><div class="rt"><b>Playlist-Link</b><small>'+esc(cur.title)+'</small></div></div><div class="sform" style="padding-top:0"><p>Öffne auf onlineradiobox.com die Seite des Senders, tippe auf „Playlist“ und füge den Link hier ein.</p><input id="orbin" value="'+esc(orbSlug(cur)?'https://onlineradiobox.com/'+orbSlug(cur)+'/playlist/':'')+'" autocomplete="off" aria-label="Playlist-Link"><button class="btn" data-sa="orbsave">Speichern</button><button class="btn ghost" data-sa="orbdel">Verknüpfung entfernen</button></div>');break;}
-    case 'orbsave':{if(!cur||!cur.live)break;var os=orbParseLink(($('#orbin')||{}).value);if(!os){toast('Das ist kein Link von onlineradiobox.com.');break;}state.rdOrb[rdHistKey(cur)]=os;saveState();orbDay=0;rdHistSheet();break;}
+    case 'orbsave':{if(!cur||!cur.live)break;var os=orbParseLink(($('#orbin')||{}).value);if(!os){toast('Das ist kein Link von onlineradiobox.com.');break;}state.rdOrb[rdHistKey(cur)]=os;saveState();orbDay=0;orbNowT=0;rdHistSheet();break;}
     case 'orbdel':{if(!cur||!cur.live)break;state.rdOrb[rdHistKey(cur)]='-';saveState();rdHistSheet();break;}
     case 'rdhclear':if(cur&&cur.live){delete state.rdHist[rdHistKey(cur)];saveState();rdHistSheet();}break;
     case 'rectracks':recTracksSheet(sctx.id);break;

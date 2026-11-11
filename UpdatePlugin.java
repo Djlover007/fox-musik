@@ -945,6 +945,8 @@ public class UpdatePlugin extends Plugin {
         o.put("title", t == null ? "" : t);
         String fin = RadioProxy.FINAL.get(ru);
         o.put("final", fin == null ? "" : fin);
+        Long at = RadioProxy.NOWT.get(ru);
+        o.put("age", at == null ? -1 : (System.currentTimeMillis() - at) / 1000);
         call.resolve(o);
     }
 
