@@ -688,6 +688,7 @@ async function addFiles(files){
 function hue(seed){var h=0,t=String(seed||'x');for(var i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))%360;return h;}
 function covDrop(s){if(!s)return;var u=covUrls.get(s.id);if(u){URL.revokeObjectURL(u);covUrls.delete(s.id);}}
 function coverURL(s){
+  if(s&&s.live&&s.nowCover)return s.nowCover;
   if(s&&!s.cover&&s.coverUrl)return s.coverUrl;
   if(!s||!s.cover)return '';
   var u=covUrls.get(s.id);
@@ -770,7 +771,7 @@ function loadSong(s,fx){
   audio._counted=false;
   if(recOn&&s.url!==recUrl){var Pr=UPDP();if(Pr&&Pr.recStop)Pr.recStop();}
   if(restoring){audio.preload=s.live?'none':(s.url?'metadata':'auto');audio._cold=true;}else audio._cold=false;
-  if(s.live){s.nowTitle='';s.artist=rdSub(s.radio||{});audio.src=s.url;audio._proxied=false;if(!restoring)rdClick(s.radio||{});rdNowStart();}
+  if(s.live){s.nowTitle='';s.nowCover='';s.artist=rdSub(s.radio||{});audio.src=s.url;audio._proxied=false;if(!restoring)rdClick(s.radio||{});rdNowStart();}
   else if(!usePre)setSrc(audio,s);
   applySpeed();
   if(old){
@@ -1174,6 +1175,7 @@ function pushNative(newTrack){
   }catch(e){}
 }
 async function coverB64(s){
+  if(s&&s.live&&s.nowCover){try{var Pn=UPDP();if(Pn&&Pn.imageB64){var rn=await Pn.imageB64({url:s.nowCover});if(rn&&rn.data)return rn.data;}}catch(e){}}
   if(s&&!s.cover&&s.coverUrl&&/^https?:/.test(s.coverUrl)){try{var Pi=UPDP();if(Pi&&Pi.imageB64){var ri=await Pi.imageB64({url:s.coverUrl});return (ri&&ri.data)||'';}}catch(e){}return '';}
   if(!s||!s.cover)return '';
   try{
@@ -2180,7 +2182,22 @@ function rdHistAdd(s,t){
 function rdSetNow(t){
   t=String(t||'').trim();
   if(!cur||!cur.live||!t||t===cur.nowTitle)return;
-  cur.nowTitle=t;cur.artist=t;rdHistAdd(cur,t);lyrKey='';updateNow();pushNative();
+  cur.nowTitle=t;cur.artist=t;rdHistAdd(cur,t);lyrKey='';
+  var hadCov=!!cur.nowCover;if(hadCov){cur.nowCover='';tintKey='';}
+  updateNow();pushNative(hadCov);rdNowCover(cur,t);
+}
+/* Cover zum laufenden Radiotitel suchen. Nur bei sicherem Treffer, sonst bleibt das Senderlogo. */
+var rdCovCache={};
+async function rdNowCover(s,t){
+  var sp=recSplit(t);if(!sp.a||!sp.t)return;
+  var k=t.toLowerCase(), u=rdCovCache[k];
+  if(u===undefined){
+    u='';
+    try{var c=await cvSearch({title:sp.t,artist:sp.a,album:''});if(c[0]&&c[0].score>=0.6)u=c[0].url||c[0].thumb||'';}catch(e){}
+    rdCovCache[k]=u;
+  }
+  if(s!==cur||s.nowTitle!==t||!u)return;
+  s.nowCover=u;tintKey='';updateNow();pushNative(true);
 }
 // Reihenfolge der Quellen: 1. Titel-Schnittstelle des Anbieters, 2. Playlist-Seite des Senders (wenn verknüpft),
 // 3. Titel aus dem Stream, aber nur wenn er frisch ist. Während einer Aufnahme ist der Stream-Titel exakt und geht vor.
