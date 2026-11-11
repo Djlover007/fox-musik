@@ -2181,14 +2181,27 @@ function rdGroupHTML(nm){
   return rdState(c,'Sender');
 }
 function rdGroupName(k){for(var i=0;i<RD_GROUPS.length;i++)if(RD_GROUPS[i][1]===k)return RD_GROUPS[i][0];return k;}
+// Bekannte Sender: Name und Playlist-Seite werden beim Hinzufügen automatisch erkannt
+var RD_KNOWN=[[/absolutradio\.de\/absolut-relax/i,'Absolut Relax']];
 function rdAddOwn(){
-  var u=window.prompt('Stream-Adresse des Senders einfügen (endet oft auf .mp3, .aac, /stream oder .m3u):','');
-  u=(u||'').trim();if(!u)return;
-  if(!/^https?:\/\//i.test(u)){toast('Das ist keine gültige Adresse.');return;}
-  if(/\/sender\/|\/radio\/[^\/]*$|\.html?$/i.test(u)&&!/stream|\.mp3|\.aac|\.m3u|\.pls|icecast|listen/i.test(u)){toast('Das ist die Webseite des Senders, nicht der Stream. Unter „Sendergruppen“ findest du viele Sender schon fertig.');return;}
-  var n=window.prompt('Name des Senders:','');n=(n||'').trim()||'Mein Sender';
-  state.radioFav.push({uuid:'own-'+Date.now().toString(36),name:n,url:u,favicon:'',tags:'Eigener Sender',country:'',cc:'',codec:'',bitrate:0,hls:false});
-  saveState();renderMain();toast('„'+n+'“ zu „Meine Sender“ hinzugefügt');
+  openSheet('<div class="shead"><div class="rt"><b>Eigenen Sender hinzufügen</b><small>Mit der Stream-Adresse des Senders</small></div></div><div class="sform" style="padding-top:0">'+
+    '<input id="rdou" placeholder="z. B. edge12.live-sm.absolutradio.de/absolut-relax" autocomplete="off" inputmode="url" aria-label="Stream-Adresse">'+
+    '<input id="rdon" placeholder="Name des Senders" autocomplete="off" aria-label="Name des Senders">'+
+    '<button class="btn" data-sa="rdownsave">Hinzufügen</button><p class="nw-sub" style="margin:6px 0 0">Die Adresse endet oft auf .mp3, .aac oder /stream. „https://“ davor ist nicht nötig.</p></div>');
+}
+function rdOwnSave(){
+  var u=String(($('#rdou')||{}).value||'').trim().replace(/\s+/g,''), n=String(($('#rdon')||{}).value||'').trim();
+  if(!u){toast('Bitte die Stream-Adresse einfügen.');return;}
+  if(!/^[a-z]+:\/\//i.test(u))u='https://'+u.replace(/^\/+/,'');
+  if(!/^https?:\/\/[^\/\s]+\.[^\/\s]+/i.test(u)){toast('Das ist keine gültige Adresse.');return;}
+  if(/\/sender\/|\.html?$/i.test(u)&&!/stream|\.mp3|\.aac|\.m3u|\.pls|icecast|listen/i.test(u)){toast('Das ist die Webseite des Senders, nicht der Stream.');return;}
+  if(!n)for(var i=0;i<RD_KNOWN.length;i++)if(RD_KNOWN[i][0].test(u)){n=RD_KNOWN[i][1];break;}
+  n=n||'Mein Sender';
+  if(state.radioFav.some(function(x){return x.url===u;})){toast('Diesen Sender hast du schon.');return;}
+  var st={uuid:'own-'+Date.now().toString(36),name:n,url:u,favicon:'',tags:'Eigener Sender',country:'',cc:'',codec:'',bitrate:0,hls:false};
+  state.radioFav.push(st);saveState();closeSheet();renderMain();
+  toast('„'+n+'“ hinzugefügt'+(orbSlug({title:n,url:u,radio:st})?' · mit Playlist des Senders':''));
+  startQueue([rdSong(st)],0);
 }
 function rdGenreName(tag){for(var i=0;i<RD_GENRES.length;i++)if(RD_GENRES[i][1]===tag)return RD_GENRES[i][0];return tag;}
 // laufender Titel aus den Senderdaten
@@ -2300,11 +2313,11 @@ function rdDiagHTML(){
     '<br>Adresse: '+esc(d.fin||'unbekannt')+(d.err?'<br>Fehler: '+esc(d.err):'')+'</p>';
 }
 /* Playlist des Senders von onlineradiobox.com (heute und die letzten 6 Tage) */
-var ORB_KNOWN=[[/^(?=.*klassik)(?=.*healing)/i,'de/klassikhealing']];
+var ORB_KNOWN=[[/^(?=.*klassik)(?=.*healing)/i,'de/klassikhealing'],[/absolut[\s-]*relax/i,'de/absolutrelax']];
 var orbCache={}, orbDay=0, orbNowT=0, orbNowTitle='';
 function orbSlug(s){
   var k=rdHistKey(s);if(state.rdOrb[k]==='-')return '';if(state.rdOrb[k])return state.rdOrb[k];
-  for(var i=0;i<ORB_KNOWN.length;i++)if(ORB_KNOWN[i][0].test(s.title||''))return ORB_KNOWN[i][1];
+  for(var i=0;i<ORB_KNOWN.length;i++)if(ORB_KNOWN[i][0].test(s.title||'')||ORB_KNOWN[i][0].test(s.url||''))return ORB_KNOWN[i][1];
   return '';
 }
 function orbParseLink(x){var m=String(x||'').match(/onlineradiobox\.com\/([a-z]{2})\/([a-z0-9_-]+)/i);return m?(m[1].toLowerCase()+'/'+m[2]):'';}
@@ -4368,6 +4381,7 @@ function handleSheet(act,el){
     case 'tagt':{var tl=state.tags[sctx.id]||(state.tags[sctx.id]=[]), tt=el.dataset.t, ti=tl.indexOf(tt);if(ti<0)tl.push(tt);else tl.splice(ti,1);if(!tl.length)delete state.tags[sctx.id];saveState();tagSheet(sctx.id);renderMain();break;}
     case 'tagnew':{var inp=$('#tagin'), nt=((inp&&inp.value)||'').trim().slice(0,30);if(!nt)break;var tl2=state.tags[sctx.id]||(state.tags[sctx.id]=[]);if(tl2.indexOf(nt)<0)tl2.push(nt);saveState();tagSheet(sctx.id);renderMain();break;}
     case 'dups':dupSheet();break;
+    case 'rdownsave':rdOwnSave();break;
     case 'homeedit':homeSheet();break;
     case 'homeup':case 'homedown':{var ho=homeOrder(), hi=ho.indexOf(el.dataset.k), hj=hi+(act==='homeup'?-1:1);if(hi>-1&&hj>=0&&hj<ho.length){var hx=ho[hi];ho[hi]=ho[hj];ho[hj]=hx;state.homeOrder=ho;saveState();homeSheet();renderMain();}break;}
     case 'rdhmark':{var mt=el.dataset.t||'';wishToggle(mt,cur&&cur.live?cur.title:'',rdCovCache[mt.toLowerCase()]||'');var hk=$('#sheet');if(hk){var st0=hk.scrollTop;rdHistSheet();hk.scrollTop=st0;}break;}
