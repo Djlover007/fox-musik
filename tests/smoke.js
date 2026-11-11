@@ -17,7 +17,17 @@ function png(r, g, b) {
 
 (async () => {
   const url = 'file://' + path.resolve(__dirname, '..', 'index.html');
-  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  // Auf dem Build-Rechner den vorinstallierten Chrome nehmen: Dann muss nichts nachgeladen werden.
+  const args = ['--autoplay-policy=no-user-gesture-required'];
+  let browser;
+  if (process.env.FOX_SYSTEM_CHROME) {
+    try { browser = await chromium.launch({ channel: 'chrome', args }); }
+    catch (e) {
+      console.log('Vorinstallierter Chrome nicht nutzbar, lade Test-Browser nach …');
+      require('child_process').execSync('npx playwright install chromium', { stdio: 'inherit', timeout: 240000 });
+      browser = await chromium.launch({ args });
+    }
+  } else browser = await chromium.launch({ args });
   const p = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));

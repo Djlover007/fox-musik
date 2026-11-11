@@ -23,9 +23,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - name: Automatische Tests
+        timeout-minutes: 8
+        env:
+          FOX_SYSTEM_CHROME: '1'
         run: |
           npm install --no-save playwright@1.48.2
-          npx playwright install --with-deps chromium
           node tests/smoke.js
       - name: Web-Dateien vorbereiten
         run: |
