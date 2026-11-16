@@ -180,6 +180,8 @@ svg.i.f{fill:currentColor;stroke:none}
 .hrow{gap:12px}.hrow>span{flex:1;min-width:0;text-align:left}
 .hcov{flex:0 0 42px;width:42px;height:42px;border-radius:10px;background:var(--accent-soft) center/cover no-repeat;display:grid;place-items:center;color:var(--accent)}.hcov .i{width:18px;height:18px}.hcov.has .i{display:none}
 .hrow b .i.hheart{width:14px;height:14px;margin-right:5px;vertical-align:-2px;fill:var(--accent);stroke:var(--accent);display:inline-block}
+.sec.subsec{margin-top:14px}.sec.subsec h3{font:700 12px/1 var(--font-body);color:var(--accent);letter-spacing:.09em;text-transform:uppercase}
+.help{border-top:1px solid var(--line);padding:2px 0}.help summary{padding:14px 2px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}.help summary::-webkit-details-marker{display:none}.help summary::after{content:'+';font-size:20px;color:var(--accent);font-weight:400}.help[open] summary::after{content:'–'}.help p{margin:0 2px 14px;color:var(--muted);line-height:1.55}.help p b{color:var(--fg)}
 .pcnew{color:var(--accent);font-weight:700}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
 .nw-help{padding:14px 4px 6px}
@@ -593,7 +595,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,homeOrder:[],homeHide:{},tags:{},hideDirs:[],recs:{},rdHist:{},rdOrb:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,autoDev:{},devs:[],wishAlert:true,homeOrder:[],homeHide:{},tags:{},hideDirs:[],recs:{},rdHist:{},rdOrb:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -1342,16 +1344,37 @@ function detailInfo(){
   if(d.type==='ar'){var r=sortedSongs().filter(function(s){return (s.artist||NOARTIST)===d.key;});return r.length?{name:d.key,songs:r,sub:'Interpret',kind:'ar'}:null;}
   return null;
 }
+// Lange Listen werden stückweise aufgebaut: erst 150 Zeilen, der Rest kommt beim Scrollen dazu.
+var rowsLimit=150, rowsPend=null, rowsObs=null;
+function rowHTML(s,i,playing){
+  var on=s.id===playing;
+  return '<div class="row'+(on?' now':'')+'"><button class="rowmain" data-act="play" data-i="'+i+'">'+coverHTML(s,'rc')+
+    '<span class="rt"><b>'+esc(s.title)+'</b><small>'+esc(recSub(s)||((s.artist||NOARTIST)+(s.album?' · '+s.album:'')))+'</small></span>'+
+    '<span class="dur">'+(on?'<span class="eq"><i></i><i></i><i></i></span>':(s.duration?fmt(s.duration):''))+'</span></button>'+
+    '<button class="ib" data-act="more" data-id="'+s.id+'" aria-label="Mehr zu '+esc(s.title)+'">'+ic('more',1)+'</button></div>';
+}
 function rowsHTML(arr){
   listIds=arr.map(function(s){return s.id;});
-  var playing=cur?cur.id:null;
-  return arr.map(function(s,i){
-    var on=s.id===playing;
-    return '<div class="row'+(on?' now':'')+'"><button class="rowmain" data-act="play" data-i="'+i+'">'+coverHTML(s,'rc')+
-      '<span class="rt"><b>'+esc(s.title)+'</b><small>'+esc(recSub(s)||((s.artist||NOARTIST)+(s.album?' · '+s.album:'')))+'</small></span>'+
-      '<span class="dur">'+(on?'<span class="eq"><i></i><i></i><i></i></span>':(s.duration?fmt(s.duration):''))+'</span></button>'+
-      '<button class="ib" data-act="more" data-id="'+s.id+'" aria-label="Mehr zu '+esc(s.title)+'">'+ic('more',1)+'</button></div>';
-  }).join('');
+  var playing=cur?cur.id:null, n=Math.min(arr.length,rowsLimit), h='';
+  for(var i=0;i<n;i++)h+=rowHTML(arr[i],i,playing);
+  if(arr.length>n){rowsPend={arr:arr,next:n,playing:playing};h+='<p id="rowsMore" class="none" style="padding:14px 0">Weitere Titel werden geladen …</p>';}
+  else rowsPend=null;
+  return h;
+}
+function rowsAppend(){
+  var p=rowsPend, el=$('#rowsMore');if(!p||!el)return;
+  var end=Math.min(p.arr.length,p.next+200), h='';
+  for(var i=p.next;i<end;i++)h+=rowHTML(p.arr[i],i,p.playing);
+  el.insertAdjacentHTML('beforebegin',h);p.next=end;rowsLimit=Math.max(rowsLimit,end);
+  if(end>=p.arr.length){el.remove();rowsPend=null;if(rowsObs){rowsObs.disconnect();rowsObs=null;}}
+  else if(rowsObs){rowsObs.unobserve(el);rowsObs.observe(el);}
+}
+function rowsWatch(){
+  if(rowsObs){rowsObs.disconnect();rowsObs=null;}
+  var el=$('#rowsMore');if(!el||!rowsPend)return;
+  if(!window.IntersectionObserver){while(rowsPend)rowsAppend();return;}
+  rowsObs=new IntersectionObserver(function(en){if(en.some(function(x){return x.isIntersecting;}))rowsAppend();},{root:$('#main'),rootMargin:'900px 0px'});
+  rowsObs.observe(el);
 }
 function barHTML(n){
   return '<div class="bar"><span class="cnt">'+n+' Titel</span><button class="pill pri" data-act="playall">'+ic('play',1)+'Abspielen</button><button class="pill" data-act="shuffleall">'+ic('shuffle')+'Zufall</button></div>';
@@ -1982,7 +2005,7 @@ function renderMain(){
   else if(view.tab==='neowake')h=neowakeHTML();
   else if(view.tab==='radio')h=radioHTML();
   else h=artistsHTML();
-  m.innerHTML=h;
+  m.innerHTML=h;rowsWatch();
 }
 var TABS=[['tracks','Titel'],['playlists','Playlists'],['albums','Alben'],['artists','Interpreten'],['podcasts','Podcasts'],['folders','Ordner']], LIBT={tracks:1,playlists:1,albums:1,artists:1,podcasts:1,folders:1}, lastLib='tracks';
 function renderTabs(){
@@ -2162,7 +2185,8 @@ function radioHTML(){
     return h;
   }
   if(state.radioFav.length){
-    h+='<div class="sec"><h3>Meine Sender</h3></div>'+rdRows(state.radioFav);
+    h+='<div class="sec"><h3>Meine Sender</h3><button data-act="rdsort">Ordnen</button></div>';
+    rdFavGroups().forEach(function(g){h+=(g.name?'<div class="sec subsec"><h3>'+esc(g.name)+'</h3></div>':'')+rdRows(g.list);});
   }
   h+='<div class="sec"><h3>Sendergruppen</h3><button data-act="rdown">+ Eigener Sender</button></div><div class="nw-grid">'+RD_GROUPS.map(function(g,i){return '<button class="nw-chip'+(i===0?' rdhot':'')+'" data-act="open" data-type="rdn" data-key="'+esc(g[1])+'">'+esc(g[0])+'</button>';}).join('')+'</div>';
   h+='<div class="sec"><h3>Genres</h3></div><div class="nw-grid">'+RD_GENRES.map(function(g){return '<button class="nw-chip" data-act="open" data-type="rdg" data-key="'+esc(g[1])+'">'+esc(g[0])+'</button>';}).join('')+'</div>';
@@ -2179,6 +2203,35 @@ function rdGroupHTML(nm){
   if(c.data&&!c.data.length&&!rbCache['nw:'+nm])c=rbLoad('nw:'+nm,'/json/stations/search?name='+encodeURIComponent(nm)+'&order=clickcount&reverse=true&limit=80&hidebroken=true');
   if(c.data){var list=c.data.slice().sort(function(a,b){return a.name.localeCompare(b.name,'de');});return rdRows(list);}
   return rdState(c,'Sender');
+}
+// Eigene Reihenfolge und eigene Gruppen für „Meine Sender“
+function rdFavGroups(){
+  var out=[{name:'',list:[]}], idx={};
+  state.radioFav.forEach(function(st){
+    if(!st.grp){out[0].list.push(st);return;}
+    if(!(st.grp in idx)){idx[st.grp]=out.length;out.push({name:st.grp,list:[]});}
+    out[idx[st.grp]].list.push(st);
+  });
+  return out.filter(function(g){return g.list.length;});
+}
+function rdSortSheet(){
+  var h='<div class="shead"><div class="rt"><b>Meine Sender ordnen</b><small>Reihenfolge ändern und Gruppen vergeben</small></div></div>';
+  var n=state.radioFav.length;
+  state.radioFav.forEach(function(st,i){
+    h+='<div class="srow line"><div><b>'+esc(st.name)+'</b><small>'+esc(st.grp||'Ohne Gruppe')+'</small></div><button class="ib" data-sa="rdup" data-u="'+esc(st.uuid)+'" aria-label="'+esc(st.name)+' nach oben"'+(i===0?' disabled':'')+'>'+ic('up')+'</button><button class="ib" data-sa="rddown" data-u="'+esc(st.uuid)+'" aria-label="'+esc(st.name)+' nach unten"'+(i===n-1?' disabled':'')+' style="transform:rotate(180deg)">'+ic('up')+'</button><button class="pill" data-sa="rdgrp" data-u="'+esc(st.uuid)+'">Gruppe</button></div>';
+  });
+  h+='<p class="nw-sub" style="margin:10px 2px 0">Sender mit derselben Gruppe stehen unter „Meine Sender“ zusammen. Die Reihenfolge gilt auch für die Startseite.</p>';
+  openSheet(h);
+}
+function rdGrpSheet(u){
+  var st=state.radioFav.filter(function(x){return x.uuid===u;})[0];if(!st)return;
+  var gs=[];state.radioFav.forEach(function(x){if(x.grp&&gs.indexOf(x.grp)<0)gs.push(x.grp);});
+  ['Entspannung','Nachrichten','Pop & Rock','Klassik'].forEach(function(g){if(gs.indexOf(g)<0)gs.push(g);});
+  var h='<div class="shead"><div class="rt"><b>Gruppe wählen</b><small>'+esc(st.name)+'</small></div><button class="ib" data-sa="rdsortback" aria-label="Zurück">'+ic('left')+'</button></div><div class="eqps">'+
+    '<button class="eqc'+(!st.grp?' on':'')+'" data-sa="rdgset" data-u="'+esc(u)+'" data-g="">Ohne Gruppe</button>'+
+    gs.map(function(g){return '<button class="eqc'+(st.grp===g?' on':'')+'" data-sa="rdgset" data-u="'+esc(u)+'" data-g="'+esc(g)+'">'+esc(g)+'</button>';}).join('')+
+    '</div><div class="sform" style="padding-top:14px"><input id="rdgn" maxlength="30" placeholder="Neue Gruppe, z. B. Zum Einschlafen" autocomplete="off" aria-label="Neue Gruppe"><button class="btn" data-sa="rdgnew" data-u="'+esc(u)+'">Neue Gruppe anlegen</button></div>';
+  openSheet(h);
 }
 function rdGroupName(k){for(var i=0;i<RD_GROUPS.length;i++)if(RD_GROUPS[i][1]===k)return RD_GROUPS[i][0];return k;}
 // Bekannte Sender: Name und Playlist-Seite werden beim Hinzufügen automatisch erkannt
@@ -2457,7 +2510,7 @@ function homeHTML(){
   return h+'<div style="height:12px"></div>';
 }
 function render(){renderHead();renderTabs();renderMain();renderNav();if(isNative())autoLibSoon();}
-function go(fn){fn();render();$('#main').scrollTop=0;}
+function go(fn){rowsLimit=150;fn();render();$('#main').scrollTop=0;}
 
 /* ---------- sheets ---------- */
 function openSheet(html){$('#sheetBody').innerHTML=html;$('#sheet').classList.add('open');$('#scrim').classList.add('open');}
@@ -2961,8 +3014,14 @@ async function mixFrom(id){
 /* ---------- Equalizer je Kopfhörer ---------- */
 var curDev='';
 function devSave(){if(curDev&&state.eqPer!==false&&state.eq)state.eqDev[curDev]={eq:JSON.parse(JSON.stringify(state.eq)),level:!!state.level,fx:JSON.parse(JSON.stringify(state.fx||{}))};}
+var SPEAKER='Handy-Lautsprecher';
 function devSet(n,silent){
-  if(!n||n===curDev)return;curDev=n;
+  if(!n||n===curDev)return;var prevDev=curDev;curDev=n;
+  if(n!==SPEAKER&&state.devs.indexOf(n)<0){state.devs.push(n);saveStatsSoon();}
+  // Automatisch weiterspielen, wenn sich ein dafür freigegebenes Gerät verbindet (nicht beim App-Start)
+  if(!silent&&prevDev&&n!==SPEAKER&&state.autoDev[n]&&cur&&audio&&audio.paused){
+    setTimeout(function(){if(curDev===n&&cur&&audio.paused){togglePlay();toast('Weiter auf „'+n+'“');}},1800);
+  }
   if(state.eqPer===false)return;
   var d=state.eqDev[n];
   if(d&&d.eq){
@@ -2973,6 +3032,64 @@ function devSet(n,silent){
   }else devSave();
 }
 async function devInit(){var P=UPDP();if(!P||!P.audioDevice)return;try{var r=await P.audioDevice();devSet(r&&r.name,true);}catch(e){}}
+function autoSheet(){
+  var h='<div class="shead"><div class="rt"><b>Automatisch weiterspielen</b><small>Sobald sich das Gerät verbindet</small></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
+  if(!state.devs.length)h+='<p class="none">Noch kein Gerät bekannt. Verbinde einmal deinen Kopfhörer, deinen Lautsprecher oder dein Auto, während Fox Musik geöffnet ist. Danach kannst du es hier einschalten.</p>';
+  state.devs.forEach(function(n){h+='<div class="srow line"><div><b>'+esc(n)+'</b><small>'+(n===curDev?'Gerade verbunden':'Zuletzt gesehen')+'</small></div><input type="checkbox" class="sw" data-set="autodev" data-k="'+esc(n)+'"'+(state.autoDev[n]?' checked':'')+' aria-label="Automatisch weiterspielen auf '+esc(n)+'"></div>';});
+  h+='<p class="nw-sub" style="margin:10px 2px 0">Fox Musik spielt dann den letzten Titel oder Sender weiter. Das klappt nur, solange die App im Hintergrund noch geöffnet ist.</p>';
+  openSheet(h);
+}
+/* ---------- Lieblingslied im Radio melden ---------- */
+var waT=null, waSeen={}, waPending=null, waSt=null;
+function waStations(){return state.radioFav.filter(function(st){return orbSlug({title:st.name,url:st.url,radio:st,id:st.uuid});}).slice(0,6);}
+async function waTick(){
+  if(state.wishAlert===false||!state.wish.length||!isNative())return;
+  var sts=waStations();
+  for(var i=0;i<sts.length;i++){
+    var st=sts[i];
+    if(cur&&cur.live&&cur.url===st.url&&audio&&!audio.paused)continue;
+    try{
+      var l=await orbLoad(orbSlug({title:st.name,url:st.url,radio:st,id:st.uuid}),0), t=orbPickNow(l,st.name);
+      if(!t||wishFind(t)<0)continue;
+      var k=st.uuid+'|'+t.toLowerCase();if(waSeen[k]&&Date.now()-waSeen[k]<3600e3)continue;
+      waSeen[k]=Date.now();waAlert(st,t);return;
+    }catch(e){}
+  }
+}
+function waAlert(st,t){
+  waPending={st:st,t:t,at:Date.now()};
+  if(document.visibilityState==='visible'){waShow();return;}
+  var sp=recSplit(t), P=UPDP();
+  if(P&&P.notify)P.notify({title:'Dein Lied läuft gerade',text:sp.t+(sp.a?' von '+sp.a:'')+' · '+st.name}).catch(function(){});
+}
+function waShow(){
+  var w=waPending;waPending=null;if(!w||Date.now()-w.at>240000)return;
+  var sp=recSplit(w.t);waSt=w.st;
+  openSheet('<div class="sform"><h3>Dein Lied läuft gerade</h3><p><b>'+esc(sp.t)+'</b>'+(sp.a?' von '+esc(sp.a):'')+' läuft jetzt bei '+esc(w.st.name)+'.</p><button class="btn" data-sa="waplay">Einschalten</button><button class="btn ghost" data-sa="cancel">Nicht jetzt</button></div>');
+}
+function waStart(){clearInterval(waT);waT=setInterval(waTick,150000);setTimeout(waTick,25000);}
+/* ---------- Hilfe & Tipps ---------- */
+var HELP=[
+ ['Musik hören','<b>Bibliothek</b> zeigt deine Titel, Playlists, Alben, Interpreten, Podcasts und Ordner. Tippe auf einen Titel, um ihn zu spielen. Die drei Punkte rechts öffnen das Titel-Menü: als Nächstes spielen, zur Playlist, Cover ändern, bearbeiten, Stimmung vergeben, Mix aus diesem Titel.'],
+ ['Der Player','Tippe unten auf den laufenden Titel, um den großen Player zu öffnen. Dort findest du Liedtext, Warteschlange, Tempo und beim Radio Aufnahme und Verlauf. Wische nach unten, um ihn zu schließen.'],
+ ['Suche','Die Lupe sucht überall gleichzeitig: eigene Titel, Alben, Interpreten, Playlists, Radiosender, Podcasts und Neowake.'],
+ ['Radio','Unter <b>Radio</b> findest du Sender nach Gruppen und Genres. Das Herz in der Liste legt einen Sender unter „Meine Sender“ ab. Mit <b>Ordnen</b> sortierst du sie und legst eigene Gruppen an. Einen Sender, den es nicht gibt, fügst du über „+ Eigener Sender“ mit seiner Stream-Adresse hinzu.'],
+ ['Radio: Titel, Verlauf, Merkliste','Im Player zeigt Fox Musik Titel, Interpret und Cover des laufenden Lieds. Das Herz merkt das Lied in der <b>Merkliste</b> (Bibliothek → Playlists). <b>Verlauf</b> zeigt, was gelaufen ist, bei verknüpften Sendern die Playlist der letzten sieben Tage. Läuft ein gemerktes Lied auf einem dieser Sender, meldet sich die App.'],
+ ['Radio aufnehmen','<b>Aufnehmen</b> im Player speichert den Sender unter Musik → Fox Radio. Im Titel-Menü der Aufnahme kannst du sie in einzelne Lieder aufteilen. Feste Zeiten planst du unter Einstellungen → Wecker & Zeitpläne → Radio-Aufnahme planen.'],
+ ['Podcasts und Hörbücher','Podcasts abonnierst du unter Bibliothek → Podcasts. Bei langen Titeln merkt sich die App die Stelle, und es gibt Knöpfe für 15 Sekunden zurück und vor. Das Tempo für Podcasts und Hörbücher stellst du getrennt von der Musik ein.'],
+ ['Klang','Einstellungen → Equalizer & Lautstärke. Unter <b>Klang-Effekte</b> gibt es Raumklang, Höhen auffrischen und den Hörtest. Klingt etwas seltsam, hilft dort „Klang zurücksetzen“. Radio und Radio-Aufnahmen laufen immer ohne Effekte.'],
+ ['Wecker, Einschlafen, Sleep-Timer','Einstellungen → Wecker & Zeitpläne: Musik-Wecker, Einschlaf-Session und geplante Aufnahme. Der Sleep-Timer steht ganz oben in den Einstellungen.'],
+ ['Kopfhörer und Auto','Die App merkt sich den Klang pro Kopfhörer. Unter Einstellungen → Automatisch weiterspielen legst du fest, bei welchem Gerät die Musik von selbst weiterläuft. In Android Auto erscheint Fox Musik, wenn dort „Unbekannte Quellen“ erlaubt sind.'],
+ ['Ordnung halten','Einstellungen → Bibliothek: fehlende Cover laden, doppelte Titel finden, Liedtexte offline speichern. Ordner blendest du unter Bibliothek → Ordner mit dem Augen-Symbol aus.'],
+ ['Sicherung','Einstellungen → Sicherung & Update. „Automatische Sicherung“ schreibt regelmäßig in eine Datei deiner Wahl, zum Beispiel auf Google Drive. Gesichert werden Favoriten, Playlists, Merkliste, Wecker, Podcasts, Klang, bearbeitete Titel, eigene Cover und Liedtexte. Die Musikdateien selbst bleiben auf dem Handy.'],
+ ['Aussehen','Einstellungen → Aussehen: Farbe, heller oder dunkler Modus und die Reihenfolge der Startseite.'],
+ ['Extras','Jahresrückblick und Party-Modus stehen unter Einstellungen → Extras. Beim Party-Modus wünschen sich Gäste per QR-Code Lieder aus deiner Sammlung.']
+];
+function helpSheet(){
+  var h='<div class="shead"><div class="rt"><b>Hilfe & Tipps</b><small>Wo finde ich was?</small></div><button class="ib" data-sa="settings" aria-label="Zurück">'+ic('left')+'</button></div>';
+  h+=HELP.map(function(x){return '<details class="help"><summary>'+x[0]+'</summary><p>'+x[1]+'</p></details>';}).join('');
+  openSheet(h);
+}
 /* ---------- Party-Modus ---------- */
 var party={on:false,url:'',qr:'',pin:'',wishes:[],wq:{}};
 function partySongs(){return JSON.stringify(songs.filter(function(s){return !s.live&&!s.url;}).map(function(s){return {i:s.id,t:s.title,a:s.artist&&s.artist!==NOARTIST?s.artist:''};}).slice(0,8000));}
@@ -4095,7 +4212,7 @@ async function backupText(){
   Object.keys(state.stats||{}).forEach(note);
   var data={app:'fox-musik',v:1,date:new Date().toISOString(),favs:state.favs,playlists:state.playlists,stats:state.stats||{},spl:state.spl||[],
     radioFav:state.radioFav||[],
-    alarms:alList(),homeOrder:state.homeOrder,homeHide:state.homeHide,rdOrb:state.rdOrb,recs:state.recs,fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
+    alarms:alList(),autoDev:state.autoDev,devs:state.devs,homeOrder:state.homeOrder,homeHide:state.homeHide,rdOrb:state.rdOrb,recs:state.recs,fx:state.fx,tags:state.tags,yr:state.yr,eqDev:state.eqDev,hideDirs:state.hideDirs,pods:state.pods,podAuto:state.podAuto,pos:state.pos,accent:state.accent,level:state.level,
     wish:state.wish||[],rdHist:state.rdHist||{},edits:edits,covers:covers,lyrics:lyrics,
     settings:{eq:state.eq,speed:state.speed,speedLong:state.speedLong,gapless:state.gapless,eqPer:state.eqPer,fade:state.fade,skip:state.skip,lock:state.lock,autoUpd:state.autoUpd,shuffle:state.shuffle,repeat:state.repeat},songs:all};
   return JSON.stringify(data);
@@ -4169,6 +4286,7 @@ async function applyBackup(text){
   (d.pods||[]).forEach(function(p){if(p&&p.feed&&!state.pods.some(function(x){return x.feed===p.feed;}))state.pods.push(p);});
   if(d.yr&&!Object.keys(state.yr||{}).length)state.yr=d.yr;
   if(d.eqDev)Object.keys(d.eqDev).forEach(function(k){if(!state.eqDev[k])state.eqDev[k]=d.eqDev[k];});
+  if(d.autoDev)Object.keys(d.autoDev).forEach(function(k){if(!(k in state.autoDev))state.autoDev[k]=d.autoDev[k];});(d.devs||[]).forEach(function(x){if(state.devs.indexOf(x)<0)state.devs.push(x);});
   if(d.homeOrder&&d.homeOrder.length)state.homeOrder=d.homeOrder;if(d.homeHide)state.homeHide=d.homeHide;
   if(d.rdOrb)Object.keys(d.rdOrb).forEach(function(k){if(!state.rdOrb[k])state.rdOrb[k]=d.rdOrb[k];});
   if(d.recs)Object.keys(d.recs).forEach(function(k){if(!state.recs[k])state.recs[k]=d.recs[k];});
@@ -4223,10 +4341,11 @@ function sleepLabel(){
 }
 function pct(v,min,max){return ((v-min)/(max-min)*100).toFixed(1)+'%';}
 function settingsSheet(){
-  var h='<div class="shead"><div class="rt"><b>Einstellungen</b></div></div><input id="setq" class="setq" type="search" placeholder="Einstellung suchen …" autocomplete="off" aria-label="Einstellung suchen"><div class="set">';
+  var h='<div class="shead"><div class="rt"><b>Einstellungen</b></div><button class="pill" data-sa="help">'+ic('info')+'Hilfe</button></div><input id="setq" class="setq" type="search" placeholder="Einstellung suchen …" autocomplete="off" aria-label="Einstellung suchen"><div class="set">';
   var miss=cvMissing().length;
   h+='<section class="sg"><h4>Wiedergabe</h4>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="sleepmenu"><b>Sleep-Timer</b><small>'+sleepLabel()+'</small></button></div>';
+  h+='<div class="srow"><button class="sleepbtn" data-sa="autoplay"><b>Automatisch weiterspielen</b><small>'+(Object.keys(state.autoDev).filter(function(k){return state.autoDev[k];}).join(', ')||'Wenn sich Kopfhörer oder Auto verbinden')+'</small></button></div>';
   h+='<div class="srow"><b>Wiedergabegeschwindigkeit</b><div class="val" id="vSpeed">'+fmtSpeed()+'</div><input type="range" data-set="speed" min="50" max="200" step="5" value="'+Math.round(state.speed*100)+'" style="--p:'+pct(state.speed*100,50,200)+'" aria-label="Wiedergabegeschwindigkeit"></div>';
   h+='<div class="srow"><b>Tempo für Podcasts & Hörbücher</b><div class="val" id="vSpeedL">'+spdTxt(state.speedLong||1)+'</div><input type="range" data-set="speedl" min="50" max="250" step="5" value="'+Math.round((state.speedLong||1)*100)+'" style="--p:'+pct((state.speedLong||1)*100,50,250)+'" aria-label="Tempo für Podcasts und Hörbücher"></div>';
   h+='<div class="srow"><b>Überblendung zwischen Titeln</b><div class="val" id="vFade">'+fmtFade()+'</div><input type="range" data-set="fade" min="0" max="12" step="1" value="'+state.fade+'" style="--p:'+pct(state.fade,0,12)+'" aria-label="Überblendung in Sekunden"></div>';
@@ -4247,6 +4366,7 @@ function settingsSheet(){
   h+='<div class="srow"><button class="sleepbtn" data-sa="alarm"><b>Wecker & Zeitpläne</b><small>'+esc(alSummary())+'</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="wrap"><b>Dein Jahresrückblick '+new Date().getFullYear()+'</b><small>Hörzeit, Lieblingstitel und Interpreten</small></button></div>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="party"><b>Party-Modus</b><small>'+(party.on?'Läuft · '+party.wishes.length+' Wünsche':'Gäste wünschen sich Lieder per QR-Code')+'</small></button></div>';
+  h+='<div class="srow line"><div><b>Lieblingslied im Radio melden</b><small>Sagt Bescheid, wenn ein Titel aus der Merkliste auf einem verknüpften Sender läuft</small></div><input type="checkbox" class="sw" data-set="wishalert"'+(state.wishAlert!==false?' checked':'')+' aria-label="Lieblingslied im Radio melden"></div>';
   h+='</section>';
   h+='<section class="sg"><h4>Aussehen</h4>';
   h+='<div class="srow"><button class="sleepbtn" data-sa="colors"><b>Akzentfarbe</b><small>'+esc((ACCENTS[state.accent]||ACCENTS.orange)[0])+'</small></button></div>';
@@ -4334,6 +4454,8 @@ function onSetting(e){
     if(e.type==='change'){saveState();alSchedule(false,(k==='alon'||k==='altime')?a:null);var lb=$('#alLbl');if(lb)lb.textContent=alLabel(a);}
   }
   else if(k==='fxprof'){if(state.fx.prof)state.fx.prof.on=el.checked;fxChanged();}
+  else if(k==='autodev'){if(el.checked)state.autoDev[el.dataset.k]=1;else delete state.autoDev[el.dataset.k];saveState();}
+  else if(k==='wishalert'){state.wishAlert=el.checked;saveState();}
   else if(k==='homevis'){if(el.checked)delete state.homeHide[el.dataset.k];else state.homeHide[el.dataset.k]=1;saveState();renderMain();}
   else if(k==='almute'){var am=alById(el.dataset.id||alEdit);if(am){am.mute=el.checked;saveState();}}
   else if(k==='eqper'){state.eqPer=el.checked;devSave();}
@@ -4381,6 +4503,14 @@ function handleSheet(act,el){
     case 'tagt':{var tl=state.tags[sctx.id]||(state.tags[sctx.id]=[]), tt=el.dataset.t, ti=tl.indexOf(tt);if(ti<0)tl.push(tt);else tl.splice(ti,1);if(!tl.length)delete state.tags[sctx.id];saveState();tagSheet(sctx.id);renderMain();break;}
     case 'tagnew':{var inp=$('#tagin'), nt=((inp&&inp.value)||'').trim().slice(0,30);if(!nt)break;var tl2=state.tags[sctx.id]||(state.tags[sctx.id]=[]);if(tl2.indexOf(nt)<0)tl2.push(nt);saveState();tagSheet(sctx.id);renderMain();break;}
     case 'dups':dupSheet();break;
+    case 'help':helpSheet();break;
+    case 'autoplay':autoSheet();break;
+    case 'waplay':closeSheet();if(waSt){startQueue([rdSong(waSt)],0);waSt=null;}break;
+    case 'rdup':case 'rddown':{var ri=-1;state.radioFav.forEach(function(x,i){if(x.uuid===el.dataset.u)ri=i;});var rj=ri+(act==='rdup'?-1:1);if(ri>-1&&rj>=0&&rj<state.radioFav.length){var rx=state.radioFav[ri];state.radioFav[ri]=state.radioFav[rj];state.radioFav[rj]=rx;saveState();var rs=$('#sheet'),rt0=rs?rs.scrollTop:0;rdSortSheet();if(rs)rs.scrollTop=rt0;renderMain();}break;}
+    case 'rdgrp':rdGrpSheet(el.dataset.u);break;
+    case 'rdgset':{var gst=state.radioFav.filter(function(x){return x.uuid===el.dataset.u;})[0];if(gst){if(el.dataset.g)gst.grp=el.dataset.g;else delete gst.grp;saveState();renderMain();}rdSortSheet();break;}
+    case 'rdgnew':{var gn=String(($('#rdgn')||{}).value||'').trim().slice(0,30), gs2=state.radioFav.filter(function(x){return x.uuid===el.dataset.u;})[0];if(!gn){toast('Bitte einen Namen eingeben.');break;}if(gs2){gs2.grp=gn;saveState();renderMain();}rdSortSheet();break;}
+    case 'rdsortback':rdSortSheet();break;
     case 'rdownsave':rdOwnSave();break;
     case 'homeedit':homeSheet();break;
     case 'homeup':case 'homedown':{var ho=homeOrder(), hi=ho.indexOf(el.dataset.k), hj=hi+(act==='homeup'?-1:1);if(hi>-1&&hj>=0&&hj<ho.length){var hx=ho[hi];ho[hi]=ho[hj];ho[hj]=hx;state.homeOrder=ho;saveState();homeSheet();renderMain();}break;}
@@ -4566,6 +4696,7 @@ document.addEventListener('click',function(e){
     case 'queue':queueSheet();break;
     case 'rec':recToggle();break;
     case 'spd':spdSheet();break;
+    case 'rdsort':rdSortSheet();break;
     case 'rdhist':rdHistSheet();break;
     case 'wrap':wrapOpen();break;
     case 'wrapnext':if(wrapI<wrapCards.length-1){wrapI++;wrapShow();}else wrapClose();break;
@@ -4583,7 +4714,7 @@ document.addEventListener('click',function(e){
 });
 $('#files').addEventListener('change',function(e){var f=Array.prototype.slice.call(e.target.files);e.target.value='';addFiles(f);});
 var nwGQ='', nwGQT=null;
-$('#q').addEventListener('input',function(e){q=e.target.value.trim();renderMain();clearTimeout(nwGQT);nwGQT=setTimeout(function(){var v=q.length>=3?q:'';if(v!==nwGQ){nwGQ=v;renderMain();}},700);});
+$('#q').addEventListener('input',function(e){q=e.target.value.trim();rowsLimit=150;$('#main').scrollTop=0;renderMain();clearTimeout(nwGQT);nwGQT=setTimeout(function(){var v=q.length>=3?q:'';if(v!==nwGQ){nwGQ=v;renderMain();}},700);});
 document.addEventListener('submit',function(e){var f=e.target;if(f&&f.dataset&&f.dataset.form==='pcs'){e.preventDefault();var pi=$('#pcq');pcQ=((pi&&pi.value)||'').trim();if(pi)pi.blur();renderMain();return;}if(f&&f.dataset&&f.dataset.form==='rds'){e.preventDefault();var ri=$('#rdq');rdQ=((ri&&ri.value)||'').trim();if(ri)ri.blur();renderMain();return;}if(f&&f.dataset&&f.dataset.form==='nws'){e.preventDefault();var i=$('#nwq');nwQ=((i&&i.value)||'').trim();if(i)i.blur();renderMain();}});
 var seek=$('#seek');
 seek.addEventListener('input',function(){
@@ -4830,7 +4961,7 @@ function srcStart(){
     if(document.visibilityState==='visible'||(audio&&!audio.paused))srcTick();
   },4000);
 }
-document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(srcTick,300);if(document.visibilityState==='hidden')lastSave(true);});
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')setTimeout(srcTick,300);if(document.visibilityState==='hidden')lastSave(true);else if(waPending)waShow();});
 
 /* ---------- start ---------- */
 document.querySelectorAll('[data-ic]').forEach(function(el){el.innerHTML=ic(el.dataset.ic,el.dataset.f);});
@@ -4844,7 +4975,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.homeOrder=saved.homeOrder||[];state.homeHide=saved.homeHide||{};state.rdOrb=saved.rdOrb||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.autoDev=saved.autoDev||{};state.devs=saved.devs||[];state.wishAlert=saved.wishAlert!==false;state.homeOrder=saved.homeOrder||[];state.homeHide=saved.homeHide||{};state.rdOrb=saved.rdOrb||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
@@ -4854,7 +4985,7 @@ render();
   setTimeout(function(){var sp=$('#splash');if(sp){sp.classList.add('hide');setTimeout(function(){sp.remove();},600);}},1300);
   try{if(!localStorage.getItem('fox-d2')){localStorage.setItem('fox-d2','1');if(state.theme==='auto'){state.theme='dark';saveState();}}}catch(e){}
   applyTheme();applySpeed();if(needFx())silenceInit(audio);
-  if(isNative()){verShow();initNative();setTimeout(bkAuto,15000);setTimeout(devInit,1500);setTimeout(function(){pcRefreshAll(false);},20000);setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
+  if(isNative()){verShow();waStart();initNative();setTimeout(bkAuto,15000);setTimeout(devInit,1500);setTimeout(function(){pcRefreshAll(false);},20000);setTimeout(autoLibSend,4000);setTimeout(alarmCheck,1500);setTimeout(function(){alSchedule(true);},5000);scanDevice(false);setTimeout(autoCheck,2500);srcStart();}
 })();
 })();
 </script>

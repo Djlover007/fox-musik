@@ -124,6 +124,17 @@ function png(r, g, b) {
     }
     ok(step);
 
+    step = 'Hilfe und automatisch weiterspielen';
+    await p.click('[data-act="settings"]'); await p.waitForTimeout(350);
+    await p.click('[data-sa="help"]'); await p.waitForTimeout(350);
+    check(await p.locator('#sheet details.help').count() >= 10, 'Hilfeseite fehlt');
+    await p.click('#sheet details.help summary >> nth=0'); await p.waitForTimeout(200);
+    await p.click('#sheet [data-sa="settings"]'); await p.waitForTimeout(350);
+    await p.click('[data-sa="autoplay"]'); await p.waitForTimeout(350);
+    check((await text('#sheet')).includes('Automatisch weiterspielen'), 'Dialog fehlt');
+    await closeSheet();
+    ok(step);
+
     step = 'Startseite anpassen';
     await p.click('[data-act="settings"]'); await p.waitForTimeout(350);
     await p.click('[data-sa="homeedit"]'); await p.waitForTimeout(350);

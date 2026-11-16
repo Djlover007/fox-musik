@@ -1415,4 +1415,30 @@ public class UpdatePlugin extends Plugin {
             }
         }).start();
     }
+
+    // ---- Hinweis-Benachrichtigung (z. B. "Dein Lied laeuft gerade") ----
+    @PluginMethod
+    public void notify(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            android.app.NotificationManager nm = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            String ch = "fox_hinweis";
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(new android.app.NotificationChannel(ch, "Hinweise", android.app.NotificationManager.IMPORTANCE_DEFAULT));
+            }
+            Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            android.app.PendingIntent pi = android.app.PendingIntent.getActivity(ctx, 4310, open,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? android.app.PendingIntent.FLAG_IMMUTABLE : 0));
+            android.app.Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new android.app.Notification.Builder(ctx, ch) : new android.app.Notification.Builder(ctx);
+            b.setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle(call.getString("title", "Fox Musik"))
+                .setContentText(call.getString("text", ""))
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+            nm.notify(4311, b.build());
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
 }
