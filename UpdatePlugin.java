@@ -1629,4 +1629,41 @@ public class UpdatePlugin extends Plugin {
         }
         call.resolve(o);
     }
+
+    // ---- Radio zurueckspulen ----
+    @PluginMethod
+    public void tsStart(PluginCall call) {
+        TsBuf.start(getContext(), call.getString("url", ""));
+        JSObject o = new JSObject();
+        o.put("ok", true);
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void tsStop(PluginCall call) {
+        TsBuf.stopNow();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void tsRead(PluginCall call) {
+        try {
+            long from = call.getLong("from", 0L);
+            int max = call.getInt("max", 131072);
+            boolean align = Boolean.TRUE.equals(call.getBoolean("align", false));
+            Object[] r = TsBuf.read(from, Math.min(max, 1048576), align);
+            byte[] d = (byte[]) r[1];
+            JSObject o = new JSObject();
+            o.put("from", (long) (Long) r[0]);
+            o.put("data", d.length > 0 ? android.util.Base64.encodeToString(d, android.util.Base64.NO_WRAP) : "");
+            o.put("total", TsBuf.bytes);
+            o.put("secs", (System.currentTimeMillis() - TsBuf.started) / 1000.0);
+            o.put("running", TsBuf.running);
+            o.put("ext", TsBuf.ext);
+            o.put("error", TsBuf.error);
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
 }

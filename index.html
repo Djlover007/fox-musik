@@ -186,6 +186,7 @@ html[data-ui="3"] .qgrid{grid-template-columns:1fr}
 html[data-ui="2"] .brand h1{white-space:nowrap;font-size:25px}html[data-ui="3"] .brand h1{white-space:nowrap;font-size:21px}
 html[data-ui="3"] .brand{min-width:0;flex-shrink:1}html[data-ui="3"] .sec h3{font-size:19px}
 html[data-ui="3"] .brand small,html[data-ui="3"] .brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}html[data-ui="3"] .head{gap:0}html[data-ui="3"] .head>.ib{width:40px;min-width:40px}
+.tsrow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:2px 0 8px}.tsrow .pill{min-width:0;padding:0 12px;font-variant-numeric:tabular-nums}.tsrow .tslive.pri{background:var(--accent);color:#1b0c02}
 .sform textarea{width:100%;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:12px 14px;font:inherit;resize:vertical;margin:4px 0 10px}
 .pcnew{color:var(--accent);font-weight:700}
 .nwmore{border:0;background:none;padding:4px 0 8px;color:var(--fg);font-weight:700;font-size:14px}
@@ -550,6 +551,7 @@ input[type=range]::-webkit-slider-thumb{width:13px;height:13px;margin-top:-4.5px
     <button class="ib skip" data-act="next" data-ic="next" data-f="1" aria-label="Nächster Titel"></button>
     <button class="ib" data-act="rep" id="pRep" aria-label="Wiederholen"></button>
   </div>
+  <div class="tsrow" id="pTs" hidden><button class="pill" data-act="tsjump" data-v="-300">−5 Min</button><button class="pill" data-act="tsjump" data-v="-30">−30 s</button><button class="pill tslive" data-act="tslive" id="pTsLive">Live</button><button class="pill" data-act="tsjump" data-v="30">+30 s</button></div>
   <div class="pextra"><button class="ib" data-act="back15" id="pB15" aria-label="15 Sekunden zurück" hidden><svg class="i" aria-hidden="true"><use href="#i-back15"/></svg></button><button class="pill" data-act="lyrics" id="pLyr"><svg class="i" aria-hidden="true"><use href="#i-lyrics"/></svg>Liedtext</button><button class="pill" data-act="rec" id="pRec" hidden><svg class="i" aria-hidden="true"><use href="#i-rec"/></svg><span>Aufnehmen</span></button><button class="pill" data-act="queue"><svg class="i" aria-hidden="true"><use href="#i-queue"/></svg>Warteschlange</button><button class="pill" data-act="rdhist" id="pHist" hidden><svg class="i" aria-hidden="true"><use href="#i-list"/></svg>Verlauf</button><button class="pill spd" data-act="spd" id="pSpd" aria-label="Tempo" hidden>1×</button><button class="ib" data-act="fwd15" id="pF15" aria-label="15 Sekunden vor" hidden><svg class="i" aria-hidden="true"><use href="#i-fwd15"/></svg></button></div>
 </section>
 
@@ -615,7 +617,7 @@ function dbBatch(store,items,del){
 
 /* ---------- state ---------- */
 var songs=[], ready=false;
-var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,ui:1,wifiOnly:false,rgOn:false,lnMap:{},rdBytes:{},autoDev:{},devs:[],wishAlert:true,homeOrder:[],homeHide:{},tags:{},hideDirs:[],recs:{},rdHist:{},rdOrb:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
+var state={playlists:[],favs:[],shuffle:false,repeat:0,hidden:[],stats:{},nwDl:{},pods:[],podSeen:{},podAuto:{},podCache:{},radioFav:[],rdIcons:{},alarm:null,alarms:null,pos:{},accent:'orange',level:false,eq:{on:false,p:'Normal',g:[0,0,0,0,0,0,0],boost:0},wish:[],spl:[],theme:'auto',autoUpd:true,ts:true,ui:1,wifiOnly:false,rgOn:false,lnMap:{},rdBytes:{},autoDev:{},devs:[],wishAlert:true,homeOrder:[],homeHide:{},tags:{},hideDirs:[],recs:{},rdHist:{},rdOrb:{},yr:{},fx:{sp:0,ex:0,prof:null},eqDev:{},eqPer:true,speed:1,speedLong:1,gapless:true,fade:0,skip:false,lock:true};
 var view={tab:'home',detail:null}, q='', searchOpen=false;
 var queue=[], origQueue=[], qi=-1, cur=null, listIds=[];
 var audio=null, sleep={end:0,track:false}, actx=null;
@@ -797,7 +799,8 @@ function loadSong(s,fx){
   audio._counted=false;
   if(recOn&&s.url!==recUrl){var Pr=UPDP();if(Pr&&Pr.recStop)Pr.recStop();}
   if(restoring){audio.preload=s.live?'none':(s.url?'metadata':'auto');audio._cold=true;}else audio._cold=false;
-  if(s.live){s.nowTitle='';s.nowCover='';s.artist=rdSub(s.radio||{});audio.src=s.url;audio._proxied=false;if(!restoring)rdClick(s.radio||{});rdNowStart();}
+  if(ts&&(ts.s!==s||!s.live||restoring))tsEnd();
+  if(s.live){s.nowTitle='';s.nowCover='';s.artist=rdSub(s.radio||{});if(tsWanted(s)&&!restoring){tsEnd();tsBegin(s,audio);}else audio.src=s.url;audio._proxied=false;if(!restoring)rdClick(s.radio||{});rdNowStart();}
   else if(!usePre)setSrc(audio,s);
   applySpeed();
   audio._lk=lnFactor(s);if(!old)setVol(audio,1);
@@ -865,7 +868,8 @@ function togglePlay(){
   if(!cur)return;
   if(!audio.paused){audio.pause();return;}
   // Radio: nach dem Öffnen der App oder nach längerer Pause immer frisch verbinden, sonst bleibt es stumm oder spielt Altes
-  if(cur.live&&(audio._cold||audio.error||(audio._pausedAt&&Date.now()-audio._pausedAt>20000))){loadSong(cur);return;}
+  var tsOk=ts&&ts.s===cur&&!audio.error&&!audio._cold;
+  if(cur.live&&!tsOk&&(audio._cold||audio.error||(audio._pausedAt&&Date.now()-audio._pausedAt>20000))){loadSong(cur);return;}
   var a=audio, p=audio.play();
   if(p&&p.catch)p.catch(function(){if(a===audio&&cur&&cur.live)loadSong(cur);});
 }
@@ -920,6 +924,7 @@ function wireAudio(a){
     }
     if(lyrOpen)lyrTick();
     yrTick(a);
+    if(ts&&ts.a===a)tsTick();
     recTick();
     posSave(false);
     lastSave(false);
@@ -939,7 +944,7 @@ function wireAudio(a){
     pushNative();
   });
   a.addEventListener('play',function(){if(a===audio){srcFoxStarted();updateTransport();pushNative();if(actx&&actx.state==='suspended')actx.resume();}});
-  a.addEventListener('pause',function(){a._lt=0;a._pausedAt=Date.now();if(a===audio){lastSave(true);updateTransport();pushNative();posSave(true);}});
+  a.addEventListener('pause',function(){a._lt=0;a._pausedAt=Date.now();if(ts&&ts.a===a){var pT=ts;clearTimeout(a._tsStop);a._tsStop=setTimeout(function(){if(ts===pT&&a.paused){diag('Zurückspulen','30 Min. Pause: Puffer beendet');tsEnd();}},30*60000);}if(a===audio){lastSave(true);updateTransport();pushNative();posSave(true);}});
   a.addEventListener('ended',function(){if(a!==audio)return;if(cur&&cur.live){nwNote('Radio-Stream beendet, verbinde neu');setTimeout(function(){if(a===audio&&cur&&cur.live){a.src=cur.url;var p=a.play();if(p&&p.catch)p.catch(function(){});}},1500);return;}next(true);});
   a.addEventListener('error',function(){if(a===audio&&cur&&cur.url){nwNote('Audio-Fehler Code '+(a.error&&a.error.code)+' '+String(a.currentSrc||'').split('?')[0]);
     if(a._proxied){nwNote('Umweg fehlgeschlagen, spiele direkt (ohne Equalizer)');var o=audio;audio=newAudio(true);dropAudio(o);audio.src=cur.url;applySpeed();var pp=audio.play();if(pp&&pp.catch)pp.catch(function(){});a._handled=true;}}});
@@ -1280,7 +1285,7 @@ function updateNow(){
   bg.style.backgroundImage=u?'url('+u+')':'linear-gradient(160deg,hsl('+hue(cur.album||cur.title)+' 55% 55%),hsl('+(hue(cur.album||cur.title)+40)+' 58% 35%))';
   $('#tDur').textContent=fmtDur(cur,cur.duration);
   if(!miniSp())tintFor(cur);
-  longUi();recUi();var hb=$('#pHist');if(hb)hb.hidden=!cur.live;
+  longUi();recUi();tsUi();var hb=$('#pHist');if(hb)hb.hidden=!cur.live;
   updateFav();updateTransport();renderMain();
   if(lyrOpen)lyrRender();
 }
@@ -2327,8 +2332,13 @@ function rdHistAdd(s,t){
 }
 function rdSetNow(t){
   t=String(t||'').trim();
-  if(!cur||!cur.live||!t||t===cur.nowTitle)return;
-  cur.nowTitle=t;cur.artist=t;rdHistAdd(cur,t);lyrKey='';
+  if(!cur||!cur.live||!t)return;
+  if(ts&&ts.s===cur){var TL=ts.titles;if(!TL.length||TL[TL.length-1].t!==t){TL.push({b:ts.total,t:t});rdHistAdd(cur,t);}var mt=tsTitleAt(ts);if(mt&&mt!==cur.nowTitle)rdShow(mt);return;}
+  if(t===cur.nowTitle)return;
+  rdHistAdd(cur,t);rdShow(t);
+}
+function rdShow(t){
+  cur.nowTitle=t;cur.artist=t;lyrKey='';
   var hadCov=!!cur.nowCover;if(hadCov){cur.nowCover='';tintKey='';}
   updateNow();pushNative(hadCov);rdNowCover(cur,t);
 }
@@ -3188,6 +3198,7 @@ var HELP=[
  ['Suche','Die Lupe sucht überall gleichzeitig: eigene Titel, Alben, Interpreten, Playlists, Radiosender, Podcasts und Neowake.'],
  ['Radio','Unter <b>Radio</b> findest du Sender nach Gruppen und Genres. Das Herz in der Liste legt einen Sender unter „Meine Sender“ ab. Mit <b>Ordnen</b> sortierst du sie und legst eigene Gruppen an. Einen Sender, den es nicht gibt, fügst du über „+ Eigener Sender“ mit seiner Stream-Adresse hinzu.'],
  ['Radio: Titel, Verlauf, Merkliste','Im Player zeigt Fox Musik Titel, Interpret und Cover des laufenden Lieds. Das Herz merkt das Lied in der <b>Merkliste</b> (Bibliothek → Playlists). <b>Verlauf</b> zeigt, was gelaufen ist, bei verknüpften Sendern die Playlist der letzten sieben Tage. Läuft ein gemerktes Lied auf einem dieser Sender, meldet sich die App.'],
+ ['Radio zurückspulen','Beim Radio kannst du pausieren und später genau dort weiterhören. Unter dem Player stehen „−5 Min“, „−30 s“ und „+30 s“. „Live“ zeigt, wie weit du zurückliegst, und springt mit einem Tipp zum laufenden Programm. Zurück geht es bis zum Einschalten des Senders, höchstens etwa 2 Stunden. Nach 30 Minuten Pause hört die App auf mitzuschreiben, damit keine Daten verbraucht werden. Hakt ein Sender damit, schalte es unter Einstellungen → Wiedergabe aus.'],
  ['Radio aufnehmen','<b>Aufnehmen</b> im Player speichert den Sender unter Musik → Fox Radio. Im Titel-Menü der Aufnahme kannst du sie in einzelne Lieder aufteilen. Feste Zeiten planst du unter Einstellungen → Wecker & Zeitpläne → Radio-Aufnahme planen.'],
  ['Podcasts und Hörbücher','Podcasts abonnierst du unter Bibliothek → Podcasts. Bei langen Titeln merkt sich die App die Stelle, und es gibt Knöpfe für 15 Sekunden zurück und vor. Das Tempo für Podcasts und Hörbücher stellst du getrennt von der Musik ein.'],
  ['Klang','Einstellungen → Equalizer & Lautstärke. Unter <b>Klang-Effekte</b> gibt es Raumklang, Höhen auffrischen und den Hörtest. Klingt etwas seltsam, hilft dort „Klang zurücksetzen“. Radio und Radio-Aufnahmen laufen immer ohne Effekte.'],
@@ -3230,6 +3241,105 @@ function diagCopy(t){
 }
 function diagSheet(){
   openSheet('<div class="shead"><div class="rt"><b>Problem melden</b><small>Bericht für die Fehlersuche</small></div><button class="ib" data-sa="help" aria-label="Zurück">'+ic('left')+'</button></div><div class="sform" style="padding-top:0"><p>Beschreib kurz, was passiert ist, und teile den Bericht, zum Beispiel per WhatsApp oder Mail an dich selbst. Den Text fügst du dann im Chat mit Claude ein.</p><textarea id="diagnote" rows="3" placeholder="Was ist passiert? Zum Beispiel: Lied X springt nach einer Minute" aria-label="Was ist passiert?"></textarea><button class="btn" data-sa="diagshare">Bericht teilen</button><button class="btn ghost" data-sa="diagcopy">Bericht kopieren</button><p class="nw-sub" style="margin:6px 0 0">Enthalten sind Version, Handy-Modell, Einstellungen, der laufende Titel und die letzten App-Meldungen. Keine Passwörter oder Anmeldedaten.</p></div>');
+}
+/* ---------- Radio zurückspulen ----------
+   Der Sender wird auf Android-Seite in eine Datei mitgeschrieben. Die App liest daraus und speist die Daten
+   über MediaSource selbst in den Player ein. So läuft nichts über den Umweg, der auf manchen Handys stumm blieb. */
+var ts=null, tsBad={}, tsGen=0, tsTimer=0;
+function tsWanted(s){return !!(state.ts!==false&&isNative()&&s&&s.live&&!tsBad[s.url]&&window.MediaSource&&!/\.m3u8|\/hls\//i.test(s.url||'')&&UPDP()&&UPDP().tsRead);}
+function tsB64(b){var bin=atob(b),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}
+function sbWait(sb){return new Promise(function(res,rej){function ok(){sb.removeEventListener('updateend',ok);sb.removeEventListener('error',bad);res();}function bad(){sb.removeEventListener('updateend',ok);sb.removeEventListener('error',bad);rej(new Error('Einspeisen fehlgeschlagen'));}sb.addEventListener('updateend',ok);sb.addEventListener('error',bad);});}
+async function sbAppend(sb,u8){var w=sbWait(sb);sb.appendBuffer(u8);await w;}
+async function sbRemove(sb,a,b){if(b<=a)return;var w=sbWait(sb);sb.remove(a,b);await w;}
+function tsSession(T,from){
+  // neue MediaSource am selben Puffer, ab Byte "from"
+  var S={gen:++tsGen,s:T.s,a:T.a,url:T.url,ms:new MediaSource(),sb:null,next:from,base:from,aligned:false,total:T.total||0,bps:T.bps,titles:T.titles||[],t0:Date.now(),busy:false,started:T.started||Date.now(),played:false};
+  if(S.a._msUrl)try{URL.revokeObjectURL(S.a._msUrl);}catch(e){}
+  S.a._msUrl=URL.createObjectURL(S.ms);S.a.src=S.a._msUrl;
+  ts=S;clearInterval(tsTimer);tsTimer=setInterval(function(){tsFeed(S);},700);setTimeout(function(){tsFeed(S);},150);
+  S.a.addEventListener('playing',function(){if(ts===S)S.played=true;},{once:true});
+  return S;
+}
+function tsBegin(s,a){
+  var P=UPDP();
+  diag('Zurückspulen','Puffer startet für „'+s.title+'“');
+  P.tsStart({url:s.url}).catch(function(e){tsFail(ts,spMsg(e));});
+  tsSession({s:s,a:a,url:s.url,total:0,bps:((s.radio&&s.radio.bitrate)||128)*125,titles:[],started:Date.now()},0);
+}
+function tsEnd(){
+  if(!ts)return;var T=ts;ts=null;clearInterval(tsTimer);
+  var P=UPDP();if(P&&P.tsStop)P.tsStop().catch(function(){});
+  if(T.a&&T.a._msUrl){try{URL.revokeObjectURL(T.a._msUrl);}catch(e){}T.a._msUrl='';}
+  tsUi();
+}
+function tsFail(T,msg){
+  if(!T||T!==ts)return;
+  diag('Zurückspulen','aus für „'+T.s.title+'“: '+msg);
+  tsBad[T.url]=1;var s=T.s, wasPlaying=!T.a.paused||!T.played;tsEnd();
+  if(cur===s){audio.src=s.url;if(wasPlaying){var p=audio.play();if(p&&p.catch)p.catch(function(){});}}
+  toast('Zurückspulen klappt bei diesem Sender nicht. Er läuft normal weiter.');
+}
+function tsPos(T){return T.base+(T.a.currentTime||0)*T.bps;}
+function tsDelay(T){return Math.max(0,(T.total-tsPos(T))/T.bps);}
+async function tsFeed(T){
+  if(T!==ts||T.busy)return;T.busy=true;
+  try{
+    var P=UPDP(), a=T.a, sb=T.sb, ahead=0;
+    if(sb&&sb.buffered.length)ahead=sb.buffered.end(sb.buffered.length-1)-a.currentTime;
+    // Wiedergabe startet nicht: zurück zum normalen Radio
+    if(!T.played&&!a.paused&&Date.now()-T.t0>15000){tsFail(T,'keine Wiedergabe nach 15 s');return;}
+    if(sb&&ahead>120){
+      if(!sb.updating&&sb.buffered.length&&a.currentTime-sb.buffered.start(0)>150)await sbRemove(sb,0,a.currentTime-90);
+      return;
+    }
+    var r=await P.tsRead({from:T.next,max:ahead<8?524288:196608,align:!T.aligned});
+    if(T!==ts)return;
+    T.total=r.total||0;if(r.secs>10&&r.total>0)T.bps=r.total/r.secs;
+    if(!r.running&&r.error&&T.next>=T.total){if(!T.played||T.total<20000){tsFail(T,r.error);return;}if(!a.paused&&ahead<1){diag('Zurückspulen','Ende des Puffers: '+r.error);tsEnd();loadSong(T.s);}return;}
+    if(!T.sb){
+      if(!r.ext)return;
+      var mime=r.ext==='aac'?'audio/aac':'audio/mpeg';
+      if(!MediaSource.isTypeSupported(mime)){tsFail(T,'Format '+mime+' nicht unterstützt');return;}
+      if(T.ms.readyState!=='open')return;
+      T.sb=T.ms.addSourceBuffer(mime);
+      try{T.sb.mode='sequence';}catch(e){}
+      try{T.ms.duration=Infinity;}catch(e){}
+    }
+    if(r.data){
+      var u8=tsB64(r.data);
+      if(!T.aligned){T.base=r.from;T.aligned=true;}
+      T.next=r.from+u8.length;
+      if(T.sb.updating)await sbWait(T.sb);
+      try{await sbAppend(T.sb,u8);}
+      catch(e){if(T.sb.buffered.length&&a.currentTime-T.sb.buffered.start(0)>20){await sbRemove(T.sb,0,a.currentTime-10);await sbAppend(T.sb,u8);}else throw e;}
+    }
+  }catch(e){if(T===ts){diagOnce('Zurückspulen',spMsg(e),10000);if(!T.played)tsFail(T,spMsg(e));}}
+  finally{T.busy=false;}
+}
+// Springen: innerhalb des schon eingespeisten Bereichs direkt, sonst neu ab der passenden Stelle im Puffer
+function tsJump(sec){
+  var T=ts;if(!T||T.s!==cur)return;
+  var a=T.a, sb=T.sb, t=a.currentTime+sec;
+  var maxB=Math.max(0,T.total-3*T.bps), target=Math.max(0,Math.min(maxB,tsPos(T)+sec*T.bps));
+  if(sb&&sb.buffered.length){for(var i=0;i<sb.buffered.length;i++){if(t>=sb.buffered.start(i)+0.2&&t<=sb.buffered.end(i)-0.5){a.currentTime=t;tsUi();return;}}}
+  if(sec<0&&target<=0&&T.base<=0){toast('Weiter zurück geht es nicht: Der Puffer beginnt beim Einschalten des Senders.');}
+  var wasPaused=a.paused, S=tsSession(T,Math.floor(target));
+  if(!wasPaused){var p=S.a.play();if(p&&p.catch)p.catch(function(){});}
+  tsUi();
+}
+function tsLive(){var T=ts;if(!T||T.s!==cur)return;tsJump(Math.max(0,tsDelay(T)-2));if(T.a.paused){var p=audio.play();if(p&&p.catch)p.catch(function(){});}}
+function tsTitleAt(T){var pos=tsPos(T), t='';for(var i=0;i<T.titles.length;i++){if(T.titles[i].b<=pos+T.bps*2)t=T.titles[i].t;}return t||(T.titles[0]&&T.titles[0].t)||'';}
+var tsUiT=0;
+function tsTick(){
+  if(!ts||ts.s!==cur)return;
+  if(Date.now()-tsUiT<900)return;tsUiT=Date.now();
+  var mt=tsTitleAt(ts);if(mt&&mt!==cur.nowTitle)rdShow(mt);
+  tsUi();
+}
+function tsUi(){
+  var row=$('#pTs');if(!row)return;var on=!!(ts&&cur&&ts.s===cur);row.hidden=!on;if(!on)return;
+  var d=tsDelay(ts), b=$('#pTsLive');
+  if(b){var live=d<8;b.textContent=live?'Live':'−'+fmt(d)+' · Live';b.classList.toggle('pri',live);b.setAttribute('aria-label',live?'Du hörst live':'Du hörst '+fmt(d)+' zeitversetzt. Zum Live-Programm springen');}
 }
 /* ---------- Party-Modus ---------- */
 var party={on:false,url:'',qr:'',pin:'',wishes:[],wq:{}};
@@ -4495,6 +4605,7 @@ function settingsSheet(){
   h+='<div class="srow"><b>Überblendung zwischen Titeln</b><div class="val" id="vFade">'+fmtFade()+'</div><input type="range" data-set="fade" min="0" max="12" step="1" value="'+state.fade+'" style="--p:'+pct(state.fade,0,12)+'" aria-label="Überblendung in Sekunden"></div>';
   h+='<div class="srow line"><div><b>Lückenlos abspielen</b><small>Lädt den nächsten Titel vor, damit Live-Alben ohne Pause durchlaufen (nur wenn Überblendung aus ist)</small></div><input type="checkbox" class="sw" data-set="gapless"'+(state.gapless!==false?' checked':'')+' aria-label="Lückenlos abspielen"></div>';
   h+='<div class="srow line"><div><b>Pause zwischen Titeln überspringen</b><small>Experimentell: schneidet Stille am Anfang und Ende ab</small></div><input type="checkbox" class="sw" data-set="skip"'+(state.skip?' checked':'')+' aria-label="Pause zwischen Titeln überspringen"></div>';
+  if(isNative())h+='<div class="srow line"><div><b>Radio zurückspulen</b><small>Pausieren und später weiterhören, bis zu 2 Stunden zurückspringen. Falls ein Sender damit hakt, hier ausschalten</small></div><input type="checkbox" class="sw" data-set="tsmode"'+(state.ts!==false?' checked':'')+' aria-label="Radio zurückspulen"></div>';
   if(isNative())h+='<div class="srow line"><div><b>Musik über Sperrbildschirm steuern</b><small>Zeigt Titel und Tasten auch bei gesperrtem Handy</small></div><input type="checkbox" class="sw" data-set="lock"'+(state.lock?' checked':'')+' aria-label="Musik über Sperrbildschirm steuern"></div>';
   h+='</section>';
   h+='<section class="sg"><h4>Klang</h4>';
@@ -4606,6 +4717,7 @@ function onSetting(e){
     if(e.type==='change'){saveState();alSchedule(false,(k==='alon'||k==='altime')?a:null);var lb=$('#alLbl');if(lb)lb.textContent=alLabel(a);}
   }
   else if(k==='fxprof'){if(state.fx.prof)state.fx.prof.on=el.checked;fxChanged();}
+  else if(k==='tsmode'){state.ts=el.checked;saveState();if(!state.ts&&ts){var tc=ts.s;tsEnd();if(cur===tc&&cur.live)loadSong(cur);}}
   else if(k==='wifionly'){state.wifiOnly=el.checked;netC.t=0;saveState();}
   else if(k==='autodev'){if(el.checked)state.autoDev[el.dataset.k]=1;else delete state.autoDev[el.dataset.k];saveState();}
   else if(k==='wishalert'){state.wishAlert=el.checked;saveState();}
@@ -4866,6 +4978,8 @@ document.addEventListener('click',function(e){
     case 'hiddendirs':hiddenDirsSheet();break;
     case 'tag2pl':{var t2=el.dataset.t, ids2=tagSongs(t2).map(function(s){return s.id;});state.playlists.push({id:uid(),name:t2,ids:ids2});saveState();render();toast('Playlist „'+t2+'“ mit '+ids2.length+' Titeln erstellt');break;}
     case 'tagren':{var to=el.dataset.t, tn=(window.prompt('Neuer Name für „'+to+'“:',to)||'').trim().slice(0,30);if(!tn||tn===to)break;Object.keys(state.tags).forEach(function(k){var l=state.tags[k], i=l.indexOf(to);if(i>-1){if(l.indexOf(tn)<0)l[i]=tn;else l.splice(i,1);}});saveState();go(function(){view.detail={type:'pl',key:'tg:'+tn};});break;}
+    case 'tsjump':tsJump(parseFloat(el.dataset.v)||0);break;
+    case 'tslive':tsLive();break;
     case 'back15':if(audio){audio.currentTime=Math.max(0,audio.currentTime-15);pushNative();}break;
     case 'fwd15':if(audio){audio.currentTime=Math.min((audio.duration||1e9)-1,audio.currentTime+15);pushNative();}break;
     case 'lyrics':lyrOpen=!lyrOpen;$('#pLyr').classList.toggle('pri',lyrOpen);lyrKey='';lyrRender(true);break;
@@ -5134,7 +5248,7 @@ render();
     if(saved){
       state.playlists=saved.playlists||[];state.favs=saved.favs||[];
       state.shuffle=!!saved.shuffle;state.repeat=saved.repeat||0;state.hidden=saved.hidden||[];
-      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.ui=saved.ui||1;state.wifiOnly=!!saved.wifiOnly;state.rgOn=!!saved.rgOn;state.lnMap=saved.lnMap||{};state.rdBytes=saved.rdBytes||{};state.autoDev=saved.autoDev||{};state.devs=saved.devs||[];state.wishAlert=saved.wishAlert!==false;state.homeOrder=saved.homeOrder||[];state.homeHide=saved.homeHide||{};state.rdOrb=saved.rdOrb||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
+      state.stats=saved.stats||{};state.nwDl=saved.nwDl||{};state.radioFav=saved.radioFav||[];state.pods=saved.pods||[];state.podSeen=saved.podSeen||{};state.podAuto=saved.podAuto||{};state.podCache=saved.podCache||{};state.rdIcons=saved.rdIcons||{};state.alarm=saved.alarm||null;state.alarms=saved.alarms||null;state.pos=saved.pos||{};state.accent=saved.accent||'orange';state.level=!!saved.level;if(saved.eq&&Array.isArray(saved.eq.g)){state.eq=saved.eq;if(typeof state.eq.boost!=='number')state.eq.boost=0;}state.fx2=!!saved.fx2;if(!state.fx2){state.fx2=true;if(state.eq.boost===6){state.eq.boost=0;setTimeout(function(){toast('Klang verbessert: Der Lautstärke-Boost war ab Werk auf +6 dB und hat die Musik gedrückt. Er ist jetzt aus.');},3500);}setTimeout(saveState,4000);}state.autoUpd=saved.autoUpd!==false;state.wish=saved.wish||[];state.spl=saved.spl||[];state.theme=saved.theme||'auto';state.tags=saved.tags||{};state.ts=saved.ts!==false;state.ui=saved.ui||1;state.wifiOnly=!!saved.wifiOnly;state.rgOn=!!saved.rgOn;state.lnMap=saved.lnMap||{};state.rdBytes=saved.rdBytes||{};state.autoDev=saved.autoDev||{};state.devs=saved.devs||[];state.wishAlert=saved.wishAlert!==false;state.homeOrder=saved.homeOrder||[];state.homeHide=saved.homeHide||{};state.rdOrb=saved.rdOrb||{};state.rdHist=saved.rdHist||{};state.recs=saved.recs||{};state.fx=saved.fx||{sp:0,ex:0,prof:null};state.yr=saved.yr||{};state.eqDev=saved.eqDev||{};state.eqPer=saved.eqPer!==false;state.hideDirs=saved.hideDirs||[];state.speed=saved.speed||1;state.speedLong=saved.speedLong||1;state.gapless=saved.gapless!==false;state.fade=saved.fade||0;state.skip=!!saved.skip;state.lock=saved.lock!==false;
     }
   }catch(e){db=null;toast('Speichern ist hier nicht möglich. Titel bleiben nur bis zum Schließen erhalten.');}
   ready=true;
