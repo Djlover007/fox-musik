@@ -135,6 +135,18 @@ function png(r, g, b) {
     await closeSheet();
     ok(step);
 
+    step = 'Problem melden und Schriftgröße';
+    await p.click('[data-act="settings"]'); await p.waitForTimeout(350);
+    await p.click('[data-sa="diag"]'); await p.waitForTimeout(350);
+    check(await p.locator('#diagnote').count() === 1, 'Problem-melden-Dialog fehlt');
+    await closeSheet();
+    await p.click('[data-act="settings"]'); await p.waitForTimeout(350);
+    await p.click('[data-sa="uisize"][data-v="3"]'); await p.waitForTimeout(350);
+    check(await p.evaluate(() => document.documentElement.style.zoom) === '1.25', 'Schriftgröße greift nicht');
+    await p.click('[data-sa="uisize"][data-v="1"]'); await p.waitForTimeout(350);
+    await closeSheet();
+    ok(step);
+
     step = 'Startseite anpassen';
     await p.click('[data-act="settings"]'); await p.waitForTimeout(350);
     await p.click('[data-sa="homeedit"]'); await p.waitForTimeout(350);

@@ -1441,4 +1441,192 @@ public class UpdatePlugin extends Plugin {
             call.reject(String.valueOf(e.getMessage()));
         }
     }
+
+    // ---- Befehl von Verknuepfung, Widget oder Sprachsteuerung abholen ----
+    @PluginMethod
+    public void cmdPending(PluginCall call) {
+        JSObject o = new JSObject();
+        String c = MainActivity.pendingCmd;
+        MainActivity.pendingCmd = null;
+        o.put("cmd", c == null ? "" : c);
+        call.resolve(o);
+    }
+
+    // ---- Verknuepfungen am App-Symbol und Senderkacheln im grossen Widget ----
+    @PluginMethod
+    public void setShortcuts(PluginCall call) {
+        Context ctx = getContext();
+        com.getcapacitor.JSArray items = call.getArray("items");
+        com.getcapacitor.JSArray st = call.getArray("stations");
+        try {
+            ctx.getSharedPreferences("fox_widget", Context.MODE_PRIVATE).edit()
+                .putString("stations", st == null ? "[]" : st.toString()).apply();
+            FoxWidget.update(ctx);
+        } catch (Exception ignore) {
+            // ignore
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 25 && items != null) {
+                android.content.pm.ShortcutManager sm = ctx.getSystemService(android.content.pm.ShortcutManager.class);
+                java.util.List<android.content.pm.ShortcutInfo> list = new java.util.ArrayList<>();
+                int max = Math.min(items.length(), Math.max(1, sm.getMaxShortcutCountPerActivity()));
+                max = Math.min(max, 4);
+                int icon = ctx.getResources().getIdentifier("ic_launcher", "mipmap", ctx.getPackageName());
+                for (int i = 0; i < max; i++) {
+                    org.json.JSONObject o = items.getJSONObject(i);
+                    String label = o.optString("label", "Fox Musik");
+                    Intent in = new Intent(ctx, FoxCmdActivity.class).setAction(Intent.ACTION_VIEW).putExtra("fox_cmd", o.optString("cmd", ""));
+                    android.content.pm.ShortcutInfo.Builder b = new android.content.pm.ShortcutInfo.Builder(ctx, "fox_" + o.optString("id", String.valueOf(i)))
+                        .setShortLabel(label.length() > 24 ? label.substring(0, 24) : label)
+                        .setLongLabel(label)
+                        .setRank(i)
+                        .setIntent(in);
+                    if (icon != 0) {
+                        b.setIcon(android.graphics.drawable.Icon.createWithResource(ctx, icon));
+                    }
+                    list.add(b.build());
+                }
+                sm.setDynamicShortcuts(list);
+            }
+            call.resolve();
+        } catch (Exception e) {
+            call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    // ---- Lautheit eines Titels messen (fuer "Lautstaerke angleichen: pro Titel") ----
+    @PluginMethod
+    public void loudness(final PluginCall call) {
+        final String path = call.getString("path", "");
+        new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            android.media.MediaExtractor ex = new android.media.MediaExtractor();
+            android.media.MediaCodec dec = null;
+            try {
+                ex.setDataSource(path);
+                int track = -1;
+                android.media.MediaFormat fmt = null;
+                for (int i = 0; i < ex.getTrackCount(); i++) {
+                    android.media.MediaFormat f = ex.getTrackFormat(i);
+                    String m = f.getString(android.media.MediaFormat.KEY_MIME);
+                    if (m != null && m.startsWith("audio/")) {
+                        track = i;
+                        fmt = f;
+                        break;
+                    }
+                }
+                if (track < 0) {
+                    throw new Exception("Keine Tonspur");
+                }
+                if (fmt.containsKey(android.media.MediaFormat.KEY_DURATION) && fmt.getLong(android.media.MediaFormat.KEY_DURATION) > 40L * 60 * 1000000) {
+                    throw new Exception("Titel zu lang");
+                }
+                ex.selectTrack(track);
+                dec = android.media.MediaCodec.createDecoderByType(fmt.getString(android.media.MediaFormat.KEY_MIME));
+                dec.configure(fmt, null, null, 0);
+                dec.start();
+                int sr = fmt.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE);
+                int chn = fmt.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT);
+                boolean flt = false;
+                Loudness L = null;
+                float[] fb = new float[0];
+                android.media.MediaCodec.BufferInfo info = new android.media.MediaCodec.BufferInfo();
+                boolean inEnd = false, outEnd = false;
+                long t0 = System.currentTimeMillis();
+                while (!outEnd) {
+                    if (System.currentTimeMillis() - t0 > 90000) {
+                        throw new Exception("Zeitüberschreitung");
+                    }
+                    if (!inEnd) {
+                        int ii = dec.dequeueInputBuffer(10000);
+                        if (ii >= 0) {
+                            java.nio.ByteBuffer b = dec.getInputBuffer(ii);
+                            int n = ex.readSampleData(b, 0);
+                            if (n < 0) {
+                                dec.queueInputBuffer(ii, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                                inEnd = true;
+                            } else {
+                                dec.queueInputBuffer(ii, 0, n, ex.getSampleTime(), 0);
+                                ex.advance();
+                            }
+                        }
+                    }
+                    int oi = dec.dequeueOutputBuffer(info, 10000);
+                    if (oi == android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        android.media.MediaFormat of = dec.getOutputFormat();
+                        sr = of.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE);
+                        chn = of.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT);
+                        flt = Build.VERSION.SDK_INT >= 24 && of.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING)
+                            && of.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_FLOAT;
+                        L = null;
+                    } else if (oi >= 0) {
+                        java.nio.ByteBuffer ob = dec.getOutputBuffer(oi);
+                        if (L == null) {
+                            L = new Loudness(sr, chn);
+                        }
+                        if (ob != null && info.size > 0) {
+                            ob.position(info.offset);
+                            ob.limit(info.offset + info.size);
+                            java.nio.ByteBuffer bb = ob.slice().order(java.nio.ByteOrder.nativeOrder());
+                            int cnt = flt ? info.size / 4 : info.size / 2;
+                            if (fb.length < cnt) {
+                                fb = new float[cnt];
+                            }
+                            if (flt) {
+                                bb.asFloatBuffer().get(fb, 0, cnt);
+                            } else {
+                                java.nio.ShortBuffer sb = bb.asShortBuffer();
+                                for (int i = 0; i < cnt; i++) {
+                                    fb[i] = sb.get(i) / 32768f;
+                                }
+                            }
+                            L.feed(fb, cnt);
+                        }
+                        dec.releaseOutputBuffer(oi, false);
+                        if ((info.flags & android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            outEnd = true;
+                        }
+                    }
+                }
+                if (L == null) {
+                    throw new Exception("Nichts dekodiert");
+                }
+                JSObject o = new JSObject();
+                o.put("lufs", L.result());
+                o.put("peak", L.peakDb());
+                call.resolve(o);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            } finally {
+                try {
+                    if (dec != null) {
+                        dec.stop();
+                        dec.release();
+                    }
+                } catch (Exception ignore) {
+                    // ignore
+                }
+                try {
+                    ex.release();
+                } catch (Exception ignore) {
+                    // ignore
+                }
+            }
+        }).start();
+    }
+
+    // ---- Netz: WLAN oder mobile Daten? ----
+    @PluginMethod
+    public void netInfo(PluginCall call) {
+        JSObject o = new JSObject();
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            o.put("metered", cm.isActiveNetworkMetered());
+            o.put("online", cm.getActiveNetworkInfo() != null && cm.getActiveNetworkInfo().isConnected());
+        } catch (Exception e) {
+            o.put("metered", false);
+            o.put("online", true);
+        }
+        call.resolve(o);
+    }
 }

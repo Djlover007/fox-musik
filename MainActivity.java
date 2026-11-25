@@ -22,6 +22,9 @@ import java.util.ArrayList;
 
 public class MainActivity extends BridgeActivity {
 
+    // Befehl aus Verknuepfung, Widget-Kachel oder Sprachsteuerung, bis die App ihn abholt
+    static volatile String pendingCmd = null;
+
     private String audioPermission() {
         return Build.VERSION.SDK_INT >= 33
             ? Manifest.permission.READ_MEDIA_AUDIO
@@ -50,6 +53,7 @@ public class MainActivity extends BridgeActivity {
         setupSpotifyWebView();
         setupAudioProxy();
         alarmWake(getIntent());
+        cmdWake(getIntent());
         String[] missing = missingPermissions();
         if (missing.length > 0) {
             ActivityCompat.requestPermissions(this, missing, 7421);
@@ -79,6 +83,18 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent);
         alarmWake(intent);
+        cmdWake(intent);
+    }
+
+    private void cmdWake(android.content.Intent i) {
+        if (i == null || !i.getBooleanExtra("fox_cmd_wake", false) || pendingCmd == null) {
+            return;
+        }
+        try {
+            getBridge().getWebView().evaluateJavascript("window.dispatchEvent(new Event('fox-cmd'))", null);
+        } catch (Exception ignore) {
+            // ignore
+        }
     }
 
     // Neowake-Audio ueber https://localhost/_nwproxy?u=... durchreichen (siehe NwProxy)

@@ -48,9 +48,42 @@ public class FoxWidget extends AppWidgetProvider {
             v.setOnClickPendingIntent(id(ctx, "w_prev"), alive ? svc(ctx, PlaybackService.A_PREV, 11) : open);
             v.setOnClickPendingIntent(id(ctx, "w_play"), alive ? svc(ctx, PlaybackService.playing ? PlaybackService.A_PAUSE : PlaybackService.A_PLAY, 12) : open);
             v.setOnClickPendingIntent(id(ctx, "w_next"), alive ? svc(ctx, PlaybackService.A_NEXT, 13) : open);
+            if (layoutName.equals("fox_widget_large")) {
+                stationTiles(ctx, v);
+            }
             mgr.updateAppWidget(ids, v);
         } catch (Exception ignore) {
             // ignore
+        }
+    }
+
+    // Bis zu drei Lieblingssender als Kacheln: ein Tipp startet den Sender
+    private static void stationTiles(Context ctx, RemoteViews v) {
+        int shown = 0;
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(ctx.getSharedPreferences("fox_widget", Context.MODE_PRIVATE).getString("stations", "[]"));
+            for (int i = 0; i < 3; i++) {
+                int tid = id(ctx, "w_st" + (i + 1));
+                if (tid == 0) {
+                    continue;
+                }
+                if (i < a.length()) {
+                    org.json.JSONObject o = a.getJSONObject(i);
+                    v.setTextViewText(tid, o.optString("name", "Sender"));
+                    v.setViewVisibility(tid, android.view.View.VISIBLE);
+                    Intent in = new Intent(ctx, FoxCmdActivity.class).setAction(Intent.ACTION_VIEW).putExtra("fox_cmd", "rd:" + o.optString("uuid", ""));
+                    v.setOnClickPendingIntent(tid, PendingIntent.getActivity(ctx, 30 + i, in, flags()));
+                    shown++;
+                } else {
+                    v.setViewVisibility(tid, android.view.View.GONE);
+                }
+            }
+        } catch (Exception ignore) {
+            // ignore
+        }
+        int row = id(ctx, "w_stations");
+        if (row != 0) {
+            v.setViewVisibility(row, shown > 0 ? android.view.View.VISIBLE : android.view.View.GONE);
         }
     }
 

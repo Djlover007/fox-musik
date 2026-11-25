@@ -25,7 +25,7 @@ const pkg = (fs.readFileSync(generated, 'utf8').match(/^\s*package\s+([\w.]+)\s*
 if (!pkg) { console.error('FEHLER: Paketname nicht lesbar'); process.exit(1); }
 console.log('Android-Paket: ' + pkg + ' (' + dir + ')');
 
-for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java', 'RadioRec.java', 'FoxWidgetLarge.java', 'PartyServer.java']) {
+for (const f of ['MainActivity.java', 'MediaScanPlugin.java', 'PlaybackPlugin.java', 'PlaybackService.java', 'UpdatePlugin.java', 'SpotifyLoginActivity.java', 'NeowakeActivity.java', 'NwProxy.java', 'RadioProxy.java', 'FoxSession.java', 'FoxWidget.java', 'FoxBrowserService.java', 'FoxAlarm.java', 'RadioRec.java', 'FoxWidgetLarge.java', 'PartyServer.java', 'FoxCmdActivity.java', 'Loudness.java']) {
   const src = fs.readFileSync(f, 'utf8').replace(/^\s*package\s+[\w.]+\s*;/m, 'package ' + pkg + ';');
   fs.writeFileSync(path.join(dir, f), src);
   console.log('kopiert: ' + f);
@@ -45,6 +45,7 @@ const perms = [
   '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />',
   '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
   '<uses-permission android:name="android.permission.WAKE_LOCK" />',
+  '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
   '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />',
   '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />',
   '<uses-permission android:name="android.permission.USE_EXACT_ALARM" />',
@@ -88,6 +89,15 @@ if (!xml.includes('FoxBrowserService')) {
     '    </application>'
   );
   console.log('Android Auto, Widget und Wecker eingetragen');
+}
+if (!xml.includes('FoxCmdActivity')) {
+  xml = xml.replace(
+    '</application>',
+    '    <activity android:name="' + pkg + '.FoxCmdActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:taskAffinity="" android:excludeFromRecents="true" android:noHistory="true">\n' +
+    '        <intent-filter><action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>\n' +
+    '    </activity>\n    </application>'
+  );
+  console.log('Verknüpfungen und Sprachsteuerung eingetragen');
 }
 if (!xml.includes('NeowakeActivity')) {
   xml = xml.replace(
