@@ -797,7 +797,7 @@ public class UpdatePlugin extends Plugin {
     // ---- Musik-Wecker ----
     @PluginMethod
     public void setAlarm(PluginCall call) {
-        long at = (long) call.getDouble("at", 0d).doubleValue();
+        long at = num(call, "at", 0);
         JSObject o = new JSObject();
         if (at <= System.currentTimeMillis()) {
             FoxAlarm.cancel(getContext());
@@ -837,7 +837,7 @@ public class UpdatePlugin extends Plugin {
     // ---- Radio aufnehmen ----
     @PluginMethod
     public void recStart(PluginCall call) {
-        RadioRec.maxMinutes = call.getInt("minutes", 0);
+        RadioRec.maxMinutes = (int) num(call, "minutes", 0);
         boolean ok = RadioRec.start(getContext(), call.getString("url", ""), call.getString("name", "Radio"));
         JSObject o = new JSObject();
         o.put("ok", ok);
@@ -968,7 +968,7 @@ public class UpdatePlugin extends Plugin {
     @PluginMethod
     public void neowakeRun(final PluginCall call) {
         final String code = call.getString("code", "");
-        final int timeout = call.getInt("timeout", 30000);
+        final int timeout = (int) num(call, "timeout", 30000);
         if (!NeowakeActivity.run(code)) {
             call.reject("Neowake ist nicht offen");
             return;
@@ -1648,8 +1648,8 @@ public class UpdatePlugin extends Plugin {
     @PluginMethod
     public void tsRead(PluginCall call) {
         try {
-            long from = call.getLong("from", 0L);
-            int max = call.getInt("max", 131072);
+            long from = num(call, "from", 0);
+            int max = (int) num(call, "max", 131072);
             boolean align = Boolean.TRUE.equals(call.getBoolean("align", false));
             Object[] r = TsBuf.read(from, Math.min(max, 1048576), align);
             byte[] d = (byte[]) r[1];
@@ -1664,6 +1664,16 @@ public class UpdatePlugin extends Plugin {
             call.resolve(o);
         } catch (Exception e) {
             call.reject(String.valueOf(e.getMessage()));
+        }
+    }
+
+    // Zahlen immer so lesen: Capacitors getLong/getInt/getDouble liefern stillschweigend den Standardwert,
+    // wenn die Zahl intern einen anderen Typ hat (kleine Zahlen kommen als Integer, Zeitstempel als Long).
+    static long num(PluginCall call, String key, long def) {
+        try {
+            return call.getData().optLong(key, def);
+        } catch (Exception e) {
+            return def;
         }
     }
 }

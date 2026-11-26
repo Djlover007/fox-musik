@@ -2896,7 +2896,7 @@ async function alSchedule(silent,changed){
   var P=UPDP();if(!P||!P.setAlarm)return;
   var best=null, bt=0;
   alList().forEach(function(a){var t=alNext(a);if(t&&(!bt||t<bt)){bt=t;best=a;}});
-  try{var r=await P.setAlarm({at:bt,id:best?best.id:''});if(!silent&&changed&&changed.on&&alNext(changed))toast(changed.name+': '+alLabel(changed)+(r&&r.mode==='inexact'?' (Android erlaubt nur ungefähre Zeit)':''));}catch(e){}
+  try{var r=await P.setAlarm({at:bt,id:best?best.id:''});if(bt&&r&&r.mode==='off'){diag('Wecker','Android hat den Zeitpunkt nicht übernommen');if(!silent)toast('Wecker konnte nicht gestellt werden. Bitte über „Problem melden“ Bescheid geben.');return;}if(!silent&&changed&&changed.on&&alNext(changed))toast(changed.name+': '+alLabel(changed)+(r&&r.mode==='inexact'?' (Android erlaubt nur ungefähre Zeit)':''));}catch(e){}
 }
 function alSources(a){
   if(a&&a.kind==='rec')return state.radioFav.map(function(st){return ['rd:'+st.uuid,st.name];});
@@ -3307,6 +3307,7 @@ async function tsFeed(T){
     }
     if(r.data){
       var u8=tsB64(r.data);
+      if(T.aligned&&r.from!==T.next){tsFail(T,'Pufferposition stimmt nicht ('+r.from+' statt '+T.next+')');return;}
       if(!T.aligned){T.base=r.from;T.aligned=true;}
       T.next=r.from+u8.length;
       if(T.sb.updating)await sbWait(T.sb);
